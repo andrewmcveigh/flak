@@ -141,31 +141,17 @@
       (mlet [_ (modify update 2 dec)]
         (return (right c))))))
 
-(defn match-class [x bindings]
-  (map (fn [[binding expr]]
-         `(if (vector? binding)
-           (let [[c sym] binding]
-             `[(instance? ~c ~x)
-               (let [~sym (extract ~x)] ~expr)])
-           expr))
-       bindings))
-
-(defn quote-pattern [[c sym]]
-  [(resolve c) sym])
-
 (defmacro pcase [x & bindings]
-  (cons 'cond
-        (mapcat (fn [[pattern expr]]
-                  (if (vector? pattern)
-                    (let [[c sym] (quote-pattern pattern)]
-                      `[(instance? ~c ~x)
-                        (let [~sym (extract ~x)] ~expr)])
-                    `[:bind (let [~pattern ~x] ~expr)]))
-                (partition 2 bindings))))
-
-(pcase (right 10)
-  [Right ch] ch
-  _          nil)
+  (list 'let ['x' x]
+        (cons 'cond
+              (mapcat (fn [[pattern expr]]
+                        (if (vector? pattern)
+                          (let [[klass sym] pattern
+                                c (resolve klass)]
+                            `[(instance? ~c ~'x')
+                              (let [~sym (extract ~'x')] ~expr)])
+                          `[:bind (let [~pattern ~'x'] ~expr)]))
+                      (partition 2 bindings)))))
 
 (defn read-while [p]
   (mlet [c read-char]

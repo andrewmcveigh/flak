@@ -1,0 +1,20 @@
+* Language Goals
+** Small, self hosted
+** Scheme inspired
+** Syntax closer to clojure than scheme
+** Compile to something with fast startup time - LLVM?
+** TCO & %cons
+** Optimizing compiler
+** No nil?
+** No exceptions
+** First class Monads
+** First class Effects & Coeffects
+** Return type polymorphism
+** Optional/gradual typing
+** S-Expression syntax
+** Powerful type system - homoiconic?
+** Written literately
+** Initially written in clojure
+** Tuple types, preferably literal - different from vectors
+** Automatic currying? - dunno?
+** Different arity functions

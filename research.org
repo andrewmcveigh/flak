@@ -1,0 +1,72 @@
+* Topics
+  - nil = ()
+  - () = empty?
+  - what type is nil?
+  - if nil is unit, what does that mean in category theory
+  - inventor of nil
+  - what is nil?
+  - why should we get rid of it?
+  - how can we get rid of it?
+  - are the empty list and the empty tuple the same thing?
+  - what are they?
+  - they are a type with only one inhabitant?
+
+  Hoare, Tony (25 August 2009). "Null References: The Billion Dollar Mistake". InfoQ.com.
+  https://www.infoq.com/presentations/Null-References-The-Billion-Dollar-Mistake-Tony-Hoare
+Tony Hoare on null
+I call it my billion-dollar mistake. It was the invention of the null
+reference in 1965. At that time, I was designing the first
+comprehensive type system for references in an object oriented
+language (ALGOL W). My goal was to ensure that all use of references
+should be absolutely safe, with checking performed automatically by
+the compiler. But I couldn't resist the temptation to put in a null
+reference, simply because it was so easy to implement. This has led to
+innumerable errors, vulnerabilities, and system crashes, which have
+probably caused a billion dollars of pain and damage in the last forty
+years.
+
+https://en.wikipedia.org/wiki/Null_pointer
+although NIL had existed in Lisp since 1959[citation needed]
+
+** What does the world (Clojure) look like without nil
+** Or different types of nil
+** Should the absence of a value be possible?
+** Does ^^ make sense?
+** What is an empty list?
+** Is it the same as nil (not in list)?
+** Should an empty list be possible?
+** How could we get rid of an empty list?
+** Is a world without nil simpler?
+** Is it the same as a (real) world without nothing?
+** What does that even mean?
+** Can this new world even exist in a dynamic language?
+** What happens when you call rest on a one item list?
+** Should we just have explicit maybe/either?
+#+BEGIN_SRC clojure
+(deftype Left [a])
+(deftype Right [b])
+
+(defn left  [a] (->Left a))
+(defn right [b] (->Right b))
+
+#+END_SRC
+** Do we really (implicitly) already have maybe?
+** If we're going to have either, why not get rid of exceptions?
+** How do we get rid of exceptions?
+   - Catch them all at the bottom
+#+BEGIN_SRC clojure
+defn
+#+END_SRC
+** What about exceptions from java?
+** What about just getting rid of throw/catch?
+   An exception is an OK type.
+** What if every fn returned either?
+** Pattern matching/destructuring syntax of either?
+** Dealing with java null & exceptions?
+* What if the clojure/script compilers were any good?
+
+* Is there any point?
+** If we have interop, we're going to have exceptions.
+** What if we did interop differently?
+** Or, what if we got rid of it?
+** What if monads/effects we're first class in clojure?

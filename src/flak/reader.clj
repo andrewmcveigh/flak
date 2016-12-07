@@ -180,6 +180,56 @@
   (mlet [s (read-while (complement token-end?))]
     (return (fmap (partial str initch) s))))
 
+(defn read-regex [_]
+  (mlet [s (read-while (partial not= \"))
+         _ read-char]
+    (return (fmap re-pattern s))))
+
+(defn read-string [_]
+  (mlet [s (read-while (partial not= \"))
+         _ read-char]
+    (return (fmap str s))))
+
+(defn read-character [initch]
+  (mlet [ch read-char]
+    (pcase ch
+      [Left e]
+      (left (ex-info "EOF while reading character" {:type :EOF :cause e}))
+      [Right ch]
+      (mlet [token (read-token ch)]
+        (pcase token
+          [Right token]
+          (let [len (count token)
+                ]
+            (pcase (cond (= 1 len)
+                         (right (Character/valueOf (first token))))
+              [Left e]   (error e)
+              [Right ch] (return (Character. ch)))))))))
+
+;; readChararcter initch =
+;;   do ch <- readChar
+;;      case ch of
+;;        Nothing -> throwError "EOF while reading token"
+;;        Just ch' ->
+;;            do token <- readToken ch'
+;;               let tokenLen = length token
+;;                   h = head token
+;;                   ch''
+;;                     | tokenLen == 1 = Right $ head token
+;;                     | token == "newline" = Right '\n'
+;;                     | token == "space" = Right ' '
+;;                     | token == "tab" = Right '\t'
+;;                     | token == "backspace" = Right '\b'
+;;                     | token == "formfeed" = Right '\f'
+;;                     | token == "return" = Right '\r'
+;;                     -- | h == 'u' = unicode
+;;                     -- | h == 'o' = octal
+;;                     | otherwise = Left ("Unsupported character: " ++ token)
+;;               case ch'' of
+;;                 Left err -> throwError err
+;;                 Right ch''' -> return $ char ch'''
+
+
 ;; (.-a (second (second (.-a (first (run-state (read-token \c) ["ctest " 6 1]))))))
 (first (run-state (read-token \c) ["ctest " 5 1]))
 

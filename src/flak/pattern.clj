@@ -1,5 +1,5 @@
 (ns flak.pattern
-  (:refer-clojure :exclude [case destructure])
+  (:refer-clojure :exclude [case destructure let])
   (:require [clojure.spec :as s]))
 
 (alias 'c 'clojure.core)
@@ -60,49 +60,60 @@
   (s/or :binding ::case-binding
         :destructuring ::case-destructuring))
 
-(s/conform ::case-pattern '[Just \@ a])
-[:destructuring {:type Just, :args [[:binding [:literal \@]]]}]
-;; [match value] (s/conform ::case-pattern '[Point 1 y])
+(defn let-destructure [match mval value expr]
+  (c/case match
+    :destructuring
+    (c/let [args (map (fn [[t :as v]]
+                        (c/case t
+                          :binding v
+                          :destructuring (conj v (gensym))))
+                      (:args mval))
+            dest (remove (comp #{:binding} first) args)]
+      `(when (instance? ~(resolve (:type mval)) ~value)
+         (c/let [~(mapv (fn [[t v g?]]
+                          (c/case t :binding (second v) :destructuring g?))
+                        args)
+                 (-destructure ~value)]
+           ~(if (seq dest)
+              (apply let-destructure (conj (first dest) expr))
+              expr))))
+    :binding
+    (c/let [[match' value'] mval]
+      (prn match value match' value')
+      (c/case match'
+        :type `(when (instance? ~(resolve value') ~value) ~expr)
+        :literal `(when (= ~value' ~value) ~expr)
+        :binding `(c/let [~value' ~value] ~expr)))))
 
-(defn destructure [x value]
-  (let [{:keys [type args bind]} value]
-    (when (instance? (resolve type) x)
-      (concat (when bind [(:binding bind) x])
-              (mapcat (fn [d [ptype pvalue]]
-                        (c/case ptype
-                          :binding
-                          (let [[btype binding] pvalue]
-                            [(if (= :binding btype) binding) d])
-                          :destructuring
-                          (destructure d pvalue)))
-                      (-destructure x)
-                      args)))))
+;;; below needs to work
+;; (cond ~(some (comp #{:literal} first second) args)
+;;       (when (->> x#
+;;                  (map (fn [[_# [btype# a#]] b#]
+;;                         (when (= :literal btype#) (= a# b#)))
+;;                       ~args)
+;;                  (remove nil?)
+;;                  (every? true?))
+;;         ~expr)
+;;       ~(every? (comp #{:binding} first second) args)
+;;       ~expr)
 
-;; (destructure
-;;  (Just. (Just. (Point. 1 2)))
-;;  (second (s/conform ::case-pattern
-;;                     '[Just [Just [Point x y :as b]] :as a])))
+(defmacro let [bindings expr]
+  (c/let [[bind value] (take 2 bindings)]
+    (when (and bind value)
+      (c/let [[match mval] (s/conform ::case-pattern bind)]
+        (let-destructure match mval value expr)))))
 
+(defmacro case [e & bindings]
+  (cons 'or
+        (map (fn [[pattern expr]] `(let [~pattern ~e] ~expr))
+             (partition 2 bindings))))
 
-;; (defmacro case [x & bindings]
-;;   (list 'let ['x' x]
-;;         (cons 'or
-;;               (map (fn [[pattern expr]]
-;;                      (let [[match value] (s/conform ::case-pattern pattern)]
-;;                        (c/case match
-;;                          :destructuring
-;;                          (destructure 'x' value)
-;;                          :binding
-;;                          (let [[match value] value]
-;;                            (c/case match
-;;                              :type `(when (instance? ~(resolve value) ~'x') ~expr)
-;;                              :literal `(when (= ~value ~'x') ~expr)
-;;                              :binding `(let [~value ~'x'] ~expr))))))
-;;                    (partition 2 bindings)))))
+;; (let [[Just [Just [Just [Point x y]]]] (Just. (Just. (Point. 0 0)))] [x y])
+(case (Just. "thing")
+  [Just "thing"] 8
+  [Just a] a
+  [Point x y] [x y]
+  [Just [Point x y]] {:x x :y y})
 
-;; (case (Just. (Point. 1 2))
-;;   [Just [Point x y]] p
-;;   )
-
-;;; what's the outcome?
-;;; all bindings bound, destructuring
+(let [Just (Just. (Point. 0 0))]
+  10)

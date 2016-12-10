@@ -1,5 +1,5 @@
 (ns flak.pattern
-  (:refer-clojure :exclude [case])
+  (:refer-clojure :exclude [case destructure])
   (:require [clojure.spec :as s]))
 
 (alias 'c 'clojure.core)
@@ -64,46 +64,45 @@
 [:destructuring {:type Just, :args [[:binding [:literal \@]]]}]
 ;; [match value] (s/conform ::case-pattern '[Point 1 y])
 
-(defmacro case [x & bindings]
-  (list 'let ['x' x]
-        (cons 'or
-              (map (fn [[pattern expr]]
-                     (let [[match value] (s/conform ::case-pattern pattern)]
-                       (c/case match
-                         :destructuring
-                         (let [{:keys [type args bind]} value]
-                           `(when (instance? ~(resolve type) ~'x')
-                              (let [x# (-destructure ~'x')
-                                    [~@(map (fn [[ptype [btype binding]]]
-                                              (if (= :binding btype) binding '_))
-                                            args)
-                                     ~@(when bind [(:as bind) (:binding bind)])] x#]
-                                (cond ~(some (comp #{:literal} first second) args)
-                                      (when (->> x#
-                                                 (map (fn [[_# [btype# a#]] b#]
-                                                        (when (= :literal btype#) (= a# b#)))
-                                                      ~args)
-                                                 (remove nil?)
-                                                 (every? true?))
-                                        ~expr)
-                                      ~(every? (comp #{:binding} first second) args)
-                                      ~expr))))
-                         :binding
-                         (let [[match value] value]
-                           (c/case match
-                             :type `(when (instance? ~(resolve value) ~'x') ~expr)
-                             :literal `(when (= ~value ~'x') ~expr)
-                             :binding `(let [~value ~'x'] ~expr))))))
-                   (partition 2 bindings)))))
+(defn destructure [x value]
+  (let [{:keys [type args bind]} value]
+    (when (instance? (resolve type) x)
+      (concat (when bind [(:binding bind) x])
+              (mapcat (fn [d [ptype pvalue]]
+                        (c/case ptype
+                          :binding
+                          (let [[btype binding] pvalue]
+                            [(if (= :binding btype) binding) d])
+                          :destructuring
+                          (destructure d pvalue)))
+                      (-destructure x)
+                      args)))))
 
-(case 66
-  x [x]
-  Nothing 44
-  ;; [Just _] 1
-  ;; [Point 1 2] {:x 0 :y 1}
-  ;; [Point 1 y] {:x 12 :y y}
-;;  [Point x y] {:x x :y y}
-  )
+;; (destructure
+;;  (Just. (Just. (Point. 1 2)))
+;;  (second (s/conform ::case-pattern
+;;                     '[Just [Just [Point x y :as b]] :as a])))
+
+
+;; (defmacro case [x & bindings]
+;;   (list 'let ['x' x]
+;;         (cons 'or
+;;               (map (fn [[pattern expr]]
+;;                      (let [[match value] (s/conform ::case-pattern pattern)]
+;;                        (c/case match
+;;                          :destructuring
+;;                          (destructure 'x' value)
+;;                          :binding
+;;                          (let [[match value] value]
+;;                            (c/case match
+;;                              :type `(when (instance? ~(resolve value) ~'x') ~expr)
+;;                              :literal `(when (= ~value ~'x') ~expr)
+;;                              :binding `(let [~value ~'x'] ~expr))))))
+;;                    (partition 2 bindings)))))
+
+;; (case (Just. (Point. 1 2))
+;;   [Just [Point x y]] p
+;;   )
 
 ;;; what's the outcome?
 ;;; all bindings bound, destructuring

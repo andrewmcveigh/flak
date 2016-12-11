@@ -1,7 +1,10 @@
 (ns flak.type
   (:refer-clojure :exclude [key name type])
   (:require [clojure.spec :as s]
-            [clojure.string :as string]))
+            [clojure.string :as string]
+            [clojure.walk :as walk]
+            [flak.functor :as f]
+            [flak.monad :as m]))
 
 (alias 'c 'clojure.core)
 
@@ -101,6 +104,38 @@
 (deftype Right [b])
 (defn right [b] (Right. b))
 
+(defn unquote-ks [ks x]
+  (cond (contains? ks x)
+        x
+        (symbol? x)
+        (list 'quote x)
+        (seq? x)
+        (cons 'list x)
+        :else x))
+
+(defmacro either [test expr]
+  (let [ks (set (keys &env))]
+    (list 'if test
+          expr
+          (list 'return
+                (list `left
+                      (list 'list ''not
+                            (walk/postwalk (partial unquote-ks ks) test)))))))
+
+(extend-protocol f/Functor
+  Left
+  (f/-fmap [Fa f] Fa)
+  Right
+  (f/-fmap [Fa f] (right (f (.-b Fa)))))
+
+(extend-protocol m/Monad
+  Left
+  (m/m-return [_ v] (right v))
+  (m/m-bind   [m f] m)
+  Right
+  (m/m-return [_ v] (right v))
+  (m/m-bind   [m f] (f (.-b m))))
+
 (defmethod print-method Nothing [m writer]
   (.write writer "#<Nothing>"))
 
@@ -120,3 +155,15 @@
   (-destructure [x] [(.-a x)])
   Right
   (-destructure [x] [(.-b x)]))
+
+(def type-reg
+  (atom
+   {'Boolean {:type 'Sum :variants [{:type 'True} {:type 'False}]}
+    'Maybe   {:type 'Sum
+              :parameters ['a]
+              :variants [{:type 'Nothing}
+                         {:type 'Just :parameters ['a]}]}
+    'Either  {:type 'Sum
+              :parameters ['a 'b]
+              :variants [{:type 'Left :parameters ['a]}
+                         {:type 'Right :parameters ['b]}]}}))

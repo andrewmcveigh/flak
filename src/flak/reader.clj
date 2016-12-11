@@ -2,29 +2,10 @@
   (:refer-clojure :exclude [get])
   (:require
    [clojure.walk :as walk]
-   [flak.type :as T]))
-
-(deftype Left [a]) (deftype Right [b])
-
-(defn left [a] (Left. a))
-(defn left? [x] (instance? Left x))
-(defn right [b] (Right. b))
-(defn right? [x] (instance? Right x))
-
-(defmethod print-method Left [m writer]
-  (.write writer (format "#<Left %s>" (.-a m))))
-
-(defmethod print-method Right [m writer]
-  (.write writer (format "#<Right %s>" (.-b m))))
-
-(defprotocol Type
-  (extract [t]))
-
-(extend-protocol Type
-  Left
-  (extract [t] (.-a t))
-  Right
-  (extract [t] (.-b t)))
+   [flak.pattern :as p]
+   [flak.type :as T])
+  (:import
+   [flak.type Nothing Just Left Right]))
 
 (defprotocol Functor
   (-fmap [Fa f]))
@@ -33,24 +14,24 @@
   Left
   (-fmap [Fa f] Fa)
   Right
-  (-fmap [Fa f] (right (f (.-b Fa)))))
+  (-fmap [Fa f] (T/right (f (.-b Fa)))))
 
 (defn fmap [f fa] (-fmap fa f))
-
-(deftype State [f])
-
-(defn state [x] (m-return (State. identity) x))
 
 (defprotocol Monad
   (m-return [_ v])
   (m-bind [mv f]))
 
+(deftype State [f])
+
+(defn state [x] (m-return (State. identity) x))
+
 (extend-protocol Monad
   Left
-  (m-return [_ v] (right v))
+  (m-return [_ v] (T/right v))
   (m-bind   [m f] m)
   Right
-  (m-return [_ v] (right v))
+  (m-return [_ v] (T/right v))
   (m-bind   [m f] (f (.-b m)))
   State
   (m-return [_ v]
@@ -118,7 +99,7 @@
     (list 'if test
           expr
           (list 'return
-                (list 'left
+                (list 'T/left
                       (list 'list ''not
                             (walk/postwalk (partial unquote-ks ks) test)))))))
 
@@ -128,48 +109,29 @@
 (def read-char
   (mlet [[s len pos] (get)]
     (either (> len pos)
-      (mlet [_ (modify update 2 inc)]
-        (return (right (nth s pos)))))))
+            (mlet [_ (modify update 2 inc)]
+              (return (T/right (nth s pos)))))))
 
 (def peek-char
   (mlet [[s len pos] (get)]
     (either (> len pos)
-      (return (right (nth s pos))))))
+            (return (T/right (nth s pos))))))
 
 (defn unread-char [c]
   (mlet [[s len pos] (get)]
     (either (and (> pos 0) (= c (nth s (dec pos))))
-      (mlet [_ (modify update 2 dec)]
-        (return (right c))))))
-
-(defmacro pcase [x & bindings]
-  (list 'let ['x' x]
-        (cons 'cond
-              (mapcat (fn [[pattern expr]]
-                        (if (vector? pattern)
-                          (if (every? symbol? pattern)
-                            (let [[klass sym] pattern
-                                  c (resolve klass)]
-                              `[(instance? ~c ~'x')
-                                (let [~sym (extract ~'x')] ~expr)]))
-                          `[:bind (let [~pattern ~'x'] ~expr)]))
-                      (partition 2 bindings)))))
-
-
-(pcase ch
-  [Just \@] (wrapping-reader 'unquote-splicing c)
-  [Just ch] (>>= (unread-char ch)
-                 (wrapping-reader 'unquote c)))
+            (mlet [_ (modify update 2 dec)]
+              (return (T/right c))))))
 
 (defn read-while [p]
   (mlet [c read-char]
-    (pcase c
+    (p/case c
       [Right ch] (if (p ch)
                    (mlet [cs (read-while p)]
                      (return (fmap (partial str ch) cs)))
                    (mlet [_ (unread-char ch)]
-                     (return (right ""))))
-      _          (return (right "")))))
+                     (return (T/right ""))))
+      _          (return (T/right "")))))
 
 (defn whitespace? [ch]
   (when ch
@@ -200,32 +162,32 @@
 
 (defmacro error
   ([type msg]
-   `(left (ex-info ~msg {:type ~type})))
+   `(T/left (ex-info ~msg {:type ~type})))
   ([type msg e]
-   `(left (ex-info ~msg {:type ~type :cause ~e}))))
+   `(T/left (ex-info ~msg {:type ~type :cause ~e}))))
 
 (defn read-character [initch]
   (mlet [ch read-char]
-    (pcase ch
+    (p/case ch
       [Left e] (error ::EOF "EOF while reading character" e)
       [Right ch]
       (mlet [token (read-token ch)]
-        (pcase token
+        (p/case token
           [Right token]
           (let [len  (count token)
                 head (first token)]
-            (pcase (cond (= 1 len)             (right head)
-                         (= token "newline")   (right \newline)
-                         (= token "space")     (right \space)
-                         (= token "tab")       (right \tab)
-                         (= token "backspace") (right \backspace)
-                         (= token "formfeed")  (right \formfeed)
-                         (= token "return")    (right \return)
-                         ;; (= head \u) unicode
-                         ;; (= head \o) octal
-                         :else
-                         (error ::unknown-character
-                                (str "Unsupported character: " token)))
+            (p/case (cond (= 1 len)             (T/right head)
+                          (= token "newline")   (T/right \newline)
+                          (= token "space")     (T/right \space)
+                          (= token "tab")       (T/right \tab)
+                          (= token "backspace") (T/right \backspace)
+                          (= token "formfeed")  (T/right \formfeed)
+                          (= token "return")    (T/right \return)
+                          ;; (= head \u) unicode
+                          ;; (= head \o) octal
+                          :else
+                          (error ::unknown-character
+                                 (str "Unsupported character: " token)))
               [Right ch] (return (T/character ch))
               err        err)))))))
 
@@ -250,11 +212,11 @@
 (def skip-line
   (mlet [r (get)
          x (read-while (partial not= \n))]
-    (return (right nil))))
+    (return (T/right nil))))
 
 (defn read-comment [_]
   (mlet [_ skip-line]
-    (return (right nil))))
+    (return (T/right nil))))
 
 (defn read-unmatched-delimiter [ch]
   (mlet [_ (get)]
@@ -293,7 +255,7 @@
 
 (defn read-unquote [c]
   (mlet [ch read-char]
-    (pcase ch
+    (p/case ch
       [Just \@] (wrapping-reader 'unquote-splicing c)
       [Just ch] (>>= (unread-char ch)
                      (wrapping-reader 'unquote c)))))

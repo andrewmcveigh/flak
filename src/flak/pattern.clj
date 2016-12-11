@@ -1,50 +1,12 @@
 (ns flak.pattern
   (:refer-clojure :exclude [case destructure let])
-  (:require [clojure.spec :as s]))
+  (:require [clojure.spec :as s]
+            [flak.type :as T]))
 
 (alias 'c 'clojure.core)
 
-(defprotocol Destructurable
-  (-destructure [x]))
-
-(deftype Point [x y]
-  Destructurable
-  (-destructure [this] [(.-x this) (.-y this)]))
-
-(defmethod print-method Point [m writer]
-  (.write writer (format "#<Point %s, %s>" (.-x m) (.-y m))))
-
-(deftype Nothing [])
-(deftype Just [a])
-
-(defmethod print-method Nothing [m writer]
-  (.write writer "#<Nothing>"))
-
-(defmethod print-method Just [m writer]
-  (.write writer (format "#<Just %s>" (.-a m))))
-
-(deftype Left [a])
-(deftype Right [b])
-
-(defmethod print-method Left [m writer]
-  (.write writer (format "#<Left %s>" (.-a m))))
-
-(defmethod print-method Right [m writer]
-  (.write writer (format "#<Right %s>" (.-b m))))
-
-(extend-protocol Destructurable
-  Just
-  (-destructure [x] [(.-a x)])
-  Left
-  (-destructure [x] [(.-a x)])
-  Right
-  (-destructure [x] [(.-b x)]))
-
-(s/def ::destructurable-name
-  (s/and symbol? #(re-matches #"^[A-Z][A-Za-z]*$" (name %))))
-
 (s/def ::case-binding
-  (s/or :type    ::destructurable-name
+  (s/or :type    ::T/type-name
         :literal (s/and #(not (s/valid? ::case-destructuring %))
                         (complement #{:as})
                         (complement symbol?))
@@ -52,7 +14,7 @@
 
 (s/def ::case-destructuring
   (s/and vector?
-         (s/cat :type ::destructurable-name
+         (s/cat :type ::T/type-name
                 :args (s/+ ::case-pattern)
                 :bind (s/? (s/cat :as #{:as} :binding symbol?)))))
 
@@ -88,7 +50,7 @@
             dsym (gensym)]
       `(when (instance? ~(resolve (:type mval)) ~value)
          (c/let [value# ~value
-                 ~dsym (-destructure value#)
+                 ~dsym (T/-destructure value#)
                  ~(if bind (:binding bind) (gensym)) value#
                  [~@(map arg-bindings args)] ~dsym]
            (or ~(when (some (comp #{:literal} first second) args)
@@ -120,11 +82,13 @@
         (map (fn [[pattern expr]] `(let [~pattern ~e] ~expr))
              (partition 2 bindings))))
 
-(case (Just. (Just. (Point. 0 0)))
-  "thing" 8
-  [Just 1] 7
-  [Point x y] [x y]
-  ;; [Just a] a
-  [Just [Point x y]] {:x x :y y}
-  [Just [Just [Point x y]]] {:a x :b y}
-  )
+;; (case (Just. (Just. (Just. (Point. 0 0))))
+;;   "thing" 8
+;;   [Just 1] 7
+;;   [Point x y] [x y]
+;;   ;; [Just a] a
+;;   [Just [Point x y]] {:x x :y y}
+;;   [Just [Just [Point 0 y]]] {:x 9 :y y}
+;;   [Just [Just [Point x y]]] {:a x :b y}
+;;   _ 10
+;;   )

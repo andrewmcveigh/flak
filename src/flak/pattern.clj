@@ -60,6 +60,21 @@
   (s/or :binding ::case-binding
         :destructuring ::case-destructuring))
 
+(defn arg-bindings [[t v g?]]
+  (c/case t
+    :binding (c/let [[btype binding] v]
+               (c/case btype
+                 :type '_
+                 :literal '_
+                 :binding binding))
+    :destructuring g?))
+
+(defn literal= [destructured args]
+  (->> destructured
+       (map (fn [[_ [btype a]] b] (when (= :literal btype) (= a b))) args)
+       (remove nil?)
+       (every? true?)))
+
 (defn let-destructure [match mval value expr]
   (c/case match
     :destructuring
@@ -68,15 +83,24 @@
                           :binding v
                           :destructuring (conj v (gensym))))
                       (:args mval))
-            dest (remove (comp #{:binding} first) args)]
+            bind (:bind mval)
+            dest (remove (comp #{:binding} first) args)
+            dsym (gensym)]
       `(when (instance? ~(resolve (:type mval)) ~value)
-         (c/let [~(mapv (fn [[t v g?]]
-                          (c/case t :binding (second v) :destructuring g?))
-                        args)
-                 (-destructure ~value)]
-           ~(if (seq dest)
-              (apply let-destructure (conj (first dest) expr))
-              expr))))
+         (c/let [value# ~value
+                 ~dsym (-destructure value#)
+                 ~(if bind (:binding bind) (gensym)) value#
+                 [~@(map arg-bindings args)] ~dsym]
+           (or ~(when (some (comp #{:literal} first second) args)
+                  `(when (literal= ~dsym '~args)
+                    ~(if (seq dest)
+                       (apply let-destructure (conj (first dest) expr))
+                       expr)))
+               ~(when (every? (comp #{:binding} first second) args) expr)
+               ~(when (not (some (comp #{:literal} first second) args))
+                  (if (seq dest)
+                    (apply let-destructure (conj (first dest) expr))
+                    expr))))))
     :binding
     (c/let [[match' value'] mval]
       (prn match value match' value')
@@ -84,18 +108,6 @@
         :type `(when (instance? ~(resolve value') ~value) ~expr)
         :literal `(when (= ~value' ~value) ~expr)
         :binding `(c/let [~value' ~value] ~expr)))))
-
-;;; below needs to work
-;; (cond ~(some (comp #{:literal} first second) args)
-;;       (when (->> x#
-;;                  (map (fn [[_# [btype# a#]] b#]
-;;                         (when (= :literal btype#) (= a# b#)))
-;;                       ~args)
-;;                  (remove nil?)
-;;                  (every? true?))
-;;         ~expr)
-;;       ~(every? (comp #{:binding} first second) args)
-;;       ~expr)
 
 (defmacro let [bindings expr]
   (c/let [[bind value] (take 2 bindings)]
@@ -108,12 +120,11 @@
         (map (fn [[pattern expr]] `(let [~pattern ~e] ~expr))
              (partition 2 bindings))))
 
-;; (let [[Just [Just [Just [Point x y]]]] (Just. (Just. (Point. 0 0)))] [x y])
-(case (Just. "thing")
-  [Just "thing"] 8
-  [Just a] a
+(case (Just. (Just. (Point. 0 0)))
+  "thing" 8
+  [Just 1] 7
   [Point x y] [x y]
-  [Just [Point x y]] {:x x :y y})
-
-(let [Just (Just. (Point. 0 0))]
-  10)
+  ;; [Just a] a
+  [Just [Point x y]] {:x x :y y}
+  [Just [Just [Point x y]]] {:a x :b y}
+  )

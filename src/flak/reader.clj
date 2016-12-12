@@ -4,7 +4,8 @@
    [flak.functor :refer [fmap]]
    [flak.monad :as m :refer [>>= return]]
    [flak.pattern :as p]
-   [flak.type :as t])
+   [flak.type :as t]
+   [clojure.string :as string])
   (:import
    [flak.type Nothing Just Left Right]))
 
@@ -60,21 +61,15 @@
           _ read-char]
     (return (fmap re-pattern s))))
 
-(defn read-string [_]
+(defn read-string* [_]
   (m/let [s (read-while (partial not= \"))
           _ read-char]
     (return (fmap str s))))
 
-(defmacro error
-  ([type msg]
-   `(t/left (ex-info ~msg {:type ~type})))
-  ([type msg e]
-   `(t/left (ex-info ~msg {:type ~type :cause ~e}))))
-
 (defn read-character [initch]
   (m/let [ch read-char]
     (p/case ch
-      [Left e] (error ::EOF "EOF while reading character" e)
+      [Left e] (t/error ::EOF "EOF while reading character" e)
       [Right ch]
       (m/let [token (read-token ch)]
         (p/case token
@@ -91,7 +86,7 @@
                           ;; (= head \u) unicode
                           ;; (= head \o) octal
                           :else
-                          (error ::unknown-character
+                          (t/error ::unknown-character
                                  (str "Unsupported character: " token)))
               [Right ch] (return (t/character ch))
               err        err)))))))
@@ -108,7 +103,7 @@
      (cond (= FIN form)
            (return (list forms))
            (= EOF form)
-           (error ::EOF "EOF while reading")
+           (t/error ::EOF "EOF while reading")
            :else
            (read-delimited delim (conj forms form))))))
 
@@ -125,7 +120,7 @@
 
 (defn read-unmatched-delimiter [ch]
   (m/let [_ (m/get)]
-    (error ::unmatched-delimiter (str "Unmatched delimiter" ch))))
+    (t/error ::unmatched-delimiter (str "Unmatched delimiter" ch))))
 
 (defn read-list [_] (read-delimited \)))
 
@@ -137,18 +132,16 @@
 (defn read-vector [_]
   ((lift vec) (read-delimited \])))
 
-(defn amap [x] (hash-map x))
-
 (defn read-map [_]
-  ((lift amap) (read-delimited \})))
+  ((lift hash-map) (read-delimited \})))
 
 (defn read-set [_]
   ((lift set) (read-delimited \})))
 
 (defn desugar-meta [form]
-  (cond (keyword? form) (amap {form true})
-        (string? form)  (amap {:tag form})
-        (symbol? form)  (amap {:tag form})
+  (cond (keyword? form) (hash-map {form true})
+        (string? form)  (hash-map {:tag form})
+        (symbol? form)  (hash-map {:tag form})
         :else           form))
 
 (defn read-meta [_]
@@ -165,10 +158,99 @@
       [Just ch] (>>= (unread-char ch)
                      (wrapping-reader 'unquote c)))))
 
+(defn dispatch-macros [ch]
+  (let [macro (case ch
+                \' (wrapping-reader 'var)
+                ;; \( read-fn
+                \{ read-set
+                ;; \< read-unreadable-form
+                \! read-comment
+                ;; \_ read-discard
+                ;; \? read-cond
+                :not-found)]
+    (if (= macro :not-found)
+      (t/nothing)
+      (t/just macro))))
+
+(defn dispatch-macro? [ch]
+  (p/case (dispatch-macros ch)
+    [Just x] true
+    Nothing  false))
+
+(defn read-dispatch [_]
+  (m/let [ch read-char]
+    (p/case ch
+      Nothing (t/error ::EOF "EOF while reading")
+      [Just ch] (p/case (dispatch-macros ch)
+                  [Just dm] (dm ch)
+                  _ (t/error ::read-tagged "Read tagged")))))
+
+(defn parse-symbol [token]
+  (if-not (or (= token "") (re-matches #":$" token) (re-matches #"^::" token))
+    (if (re-matches #"/" token)
+      (let [[ns name] (string/split #"/" token)]
+        (t/right [ns name]))
+      (t/right [t/nothing token]))
+    (t/error ::invalid-symbol "Invalid symbol")))
+
+(defn read-symbol [initch]
+  (m/let [token (read-token initch)]
+    (case token
+      "True"      (return t/true*)
+      "False"     (return t/false*)
+      "NaN"       (return t/NaN)
+      "-Infinity" (return t/-Infinity)
+      "Infinity"  (return t/Infinity)
+      (p/case (parse-symbol token)
+        [Right [ns name]] (return (symbol ns name))
+        [Left _ :as err]  err))))
+
+(defn read-keyword [initch]
+  (m/let [c read-char]
+    (p/case c
+      [Right ch] (if (whitespace? ch)
+                   (t/error ::invalid-token "Invalid token: <whitespace>")
+                   (m/let [token (read-token ch)]
+                     (p/case token
+                       [Right t] (p/case (>>= token parse-symbol)
+                                   [Right [ns name]]
+                                   (if (= \: (first t))
+                                     (t/error ::cannot-resolve-ns
+                                              "Cannot resolve ns")
+                                     (return (t/keyword ns name)))
+                                   [_ [Left :as err]] err)
+                       [Left :as err] err)))
+      [Left :as err] "test"
+      )))
+
+(defn macros [ch]
+  (let [form (case ch
+               \" read-string*
+               \: read-keyword
+               \; read-comment
+               \' (wrapping-reader 'quote)
+               \@ (wrapping-reader 'deref)
+               \^ read-meta
+               \` (wrapping-reader 'syntax-quote)
+               \~ read-unquote
+               \( read-list
+               \) read-unmatched-delimiter
+               \[ read-vector
+               \] read-unmatched-delimiter
+               \{ read-map
+               \} read-unmatched-delimiter
+               ;; \% read-arg
+               \# read-dispatch
+               \\ read-character
+               :not-found)]
+    (if (= form :not-found)
+      (t/nothing)
+      (t/just form))))
+
 (defn string-reader [s]
   [s (count s) 0])
 
-;; (first (m/run-state (read-character \\) (string-reader "t ")))
+(first (m/run-state (read-keyword \:) (string-reader "keyword ")))
 
 ;; (.-b (first (run-state (read-while #(#{\t \e} %)) ["test" 4 0])))
 

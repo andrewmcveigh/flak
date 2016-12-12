@@ -8,6 +8,10 @@
 
 (alias 'c 'clojure.core)
 
+(def NaN (Object.))
+(def -Infinity (Object.))
+(def Infinity (Object.))
+
 (def exclude-java-classes
   '[Character String Integer Boolean])
 
@@ -95,8 +99,9 @@
 (defprotocol Destructurable
   (-destructure [x]))
 
-(deftype Nothing [])
-(defn nothing [] (Nothing.))
+(deftype True []) (def true* (True.))
+(deftype False []) (def false* (False.))
+(deftype Nothing []) (def nothing (Nothing.))
 (deftype Just [a])
 (defn just [a] (Just. a))
 (deftype Left [a])
@@ -104,23 +109,33 @@
 (deftype Right [b])
 (defn right [b] (Right. b))
 
+(deftype Keyword [ns name])
+(defn keyword
+  ([name] (keyword nothing name))
+  ([ns name] (Keyword. ns name)))
+
 (defn unquote-ks [ks x]
   (cond (contains? ks x)
         x
         (symbol? x)
-        (list 'quote x)
+        (c/list 'quote x)
         (seq? x)
         (cons 'list x)
         :else x))
 
 (defmacro either [test expr]
   (let [ks (set (keys &env))]
-    (list 'if test
-          expr
-          (list 'return
-                (list `left
-                      (list 'list ''not
-                            (walk/postwalk (partial unquote-ks ks) test)))))))
+    `(if ~test
+       ~expr
+       (m/m-return (left nil)
+                   (left (c/list 'clojure.core/not
+                                 ~(walk/postwalk (partial unquote-ks ks) test)))))))
+
+(defmacro error
+  ([type msg]
+   `(left (ex-info ~msg {:type ~type})))
+  ([type msg e]
+   `(left (ex-info ~msg {:type ~type :cause ~e}))))
 
 (extend-protocol f/Functor
   Left

@@ -60,7 +60,7 @@
           (ex-info "Monad Types wrong"
                    {:error `(not (= ~(class ~result) ~(class ~mt)))}))))))
 
-(def >>= m-bind)
+(defn >>= [mv f] (m-bind mv f))
 
 (defn <=<
   ([g f] (fn [x] (>>= (f x) g)))

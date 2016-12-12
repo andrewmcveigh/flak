@@ -14,7 +14,7 @@
 
 (s/def ::case-destructuring
   (s/and vector?
-         (s/cat :type ::T/type-name
+         (s/cat :type (s/? ::T/type-name)
                 :args (s/+ ::case-pattern)
                 :bind (s/? (s/cat :as #{:as} :binding symbol?)))))
 
@@ -37,6 +37,11 @@
        (remove nil?)
        (every? true?)))
 
+(defn ensure-class [class-or-symbol]
+  (if (class? class-or-symbol)
+    class-or-symbol
+    (resolve class-or-symbol)))
+
 (defn let-destructure [match mval value expr]
   (c/case match
     :destructuring
@@ -46,28 +51,29 @@
                           :destructuring (conj v (gensym))))
                       (:args mval))
             bind (:bind mval)
+            type (:type mval)
             dest (remove (comp #{:binding} first) args)
             dsym (gensym)]
-      `(when (instance? ~(resolve (:type mval)) ~value)
-         (c/let [value# ~value
-                 ~dsym (T/-destructure value#)
-                 ~(if bind (:binding bind) (gensym)) value#
-                 [~@(map arg-bindings args)] ~dsym]
-           (or ~(when (some (comp #{:literal} first second) args)
-                  `(when (literal= ~dsym '~args)
-                    ~(if (seq dest)
-                       (apply let-destructure (conj (first dest) expr))
-                       expr)))
-               ~(when (every? (comp #{:binding} first second) args) expr)
-               ~(when (not (some (comp #{:literal} first second) args))
-                  (if (seq dest)
-                    (apply let-destructure (conj (first dest) expr))
-                    expr))))))
+      `(let [type?# (and ~type (instance? (ensure-class ~type) ~value))]
+         (when (or type?# (nil? ~type))
+           (c/let [value# ~value
+                   ~dsym (if type?# (T/-destructure value#) value#)
+                   ~(if bind (:binding bind) (gensym)) value#
+                   [~@(map arg-bindings args)] ~dsym]
+             (or ~(when (some (comp #{:literal} first second) args)
+                    `(when (literal= ~dsym '~args)
+                       ~(if (seq dest)
+                          (apply let-destructure (conj (first dest) expr))
+                          expr)))
+                 ~(when (every? (comp #{:binding} first second) args) expr)
+                 ~(when (not (some (comp #{:literal} first second) args))
+                    (if (seq dest)
+                      (apply let-destructure (conj (first dest) expr))
+                      expr)))))))
     :binding
     (c/let [[match' value'] mval]
-      (prn match value match' value')
       (c/case match'
-        :type `(when (instance? ~(resolve value') ~value) ~expr)
+        :type `(when (instance? ~(ensure-class value') ~value) ~expr)
         :literal `(when (= ~value' ~value) ~expr)
         :binding `(c/let [~value' ~value] ~expr)))))
 

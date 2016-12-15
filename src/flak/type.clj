@@ -85,12 +85,8 @@
          (s/cat :type ::type-constructor
                 :data ::data-constructor)))
 
-(defmacro data [& declaration]
-  `(let [{:keys [~'type ~'data]} (s/conform ::data-type '~declaration)]
-     [~'type ~'data]
-     ))
 
-;; (data (Either a b) (or (Left a) (Right b)))
+
 ;; (data Dynamic )
 ;; (data Boolean (or True False))
 ;; (data (Maybe a) (or Nothing (Just a)))
@@ -207,6 +203,35 @@
   (-destructure [x] [(.-a x)])
   Right
   (-destructure [x] [(.-b x)]))
+
+(defn type-params [type]
+  (mapv second (::type-args type)))
+
+(defn type-constructor-ast [[t tc]]
+  (case t
+    ::type-name {:type tc}
+    ::parameterized-constructor {:type (::type-name tc)
+                                 :parameters (type-params tc)}))
+
+(defmacro data [& declaration]
+  (let [{:keys [type data]} (s/conform ::data-type declaration)
+        [t type] type
+        [d data] data]
+    (case t
+      ::parameterized-constructor
+      `{'~(::type-name type)
+        '~(merge {:parameters (type-params type)}
+                 (case d
+                   ::sum-constructor
+                   {:type 'Sum
+                    :variants (mapv type-constructor-ast
+                                    (::type-constructor data))}
+                   ::type-constructor {:type 'Data}))})))
+
+(data (Either a b) (or (Left a) (Right b)))
+(data (Maybe a) (or Nothing (Just a)))
+(data (Point a a) (Point a a))
+(data (Point a Int) (Point a Int))
 
 (def type-reg
   (atom

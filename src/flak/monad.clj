@@ -18,6 +18,9 @@
                       f2     (.-f m2)]
                 (f2 s'))))))
 
+(defmethod print-method State [m writer]
+  (.write writer (format "#<State %s>" (.-f m))))
+
 (defn state [x] (m-return (State. identity) x))
 
 (defn get

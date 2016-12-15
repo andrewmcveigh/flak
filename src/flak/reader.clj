@@ -2,6 +2,7 @@
   (:require
    [clojure.walk :as walk]
    [flak.functor :refer [fmap]]
+   [flak.number :as number]
    [flak.monad :as m :refer [>>= return]]
    [flak.pattern :as p]
    [flak.type :as t]
@@ -9,19 +10,27 @@
   (:import
    [flak.type Nothing Just Left Right]))
 
+(def READ_FINISHED (Object.))
+(def FIN (Object.))
+(def EOF (Object.))
+(defn fin? [x] (= x FIN))
+(defn eof? [x] (= x EOF))
+
 ;; type StringReader = State {:s String :len Int :pos Int} (Either Any Char)
 ;; read-char :: Reader -> Reader
 ;; peek-char :: Reader -> Reader
 (def read-char
   (m/let [[s len pos] (m/get)]
-    (t/either (> len pos)
-              (m/let [_ (m/modify update 2 inc)]
-                (return (t/right (nth s pos)))))))
+    (if (> len pos)
+      (m/let [_ (m/modify update 2 inc)]
+        (return (t/right (nth s pos))))
+      (return (t/left EOF)))))
 
 (def peek-char
   (m/let [[s len pos] (m/get)]
-    (t/either (> len pos)
-              (return (t/right (nth s pos))))))
+    (if (> len pos)
+      (return (t/right (nth s pos)))
+      (return (t/left EOF)))))
 
 (defn unread-char [c]
   (m/let [[s len pos] (m/get)]
@@ -37,6 +46,7 @@
                      (return (fmap (partial str ch) cs)))
                    (m/let [_ (unread-char ch)]
                      (return (t/right ""))))
+      [Left EOF] (return (t/right ""))
       _          (return (t/right "")))))
 
 (defn whitespace? [ch]
@@ -50,7 +60,7 @@
     false))
 
 (defn token-end? [ch]
-  (or (whitespace? ch) (macro-terminating? ch)))
+  (or (whitespace? ch) (macro-terminating? ch) (eof? ch)))
 
 (defn read-token [initch]
   (m/let [s (read-while (complement token-end?))]
@@ -91,8 +101,6 @@
               [Right ch] (return (t/character ch))
               err        err)))))))
 
-(def FIN (Object.))
-(def EOF (Object.))
 (declare read*)
 
 (defn read-delimited
@@ -107,7 +115,7 @@
            :else
            (read-delimited delim (conj forms form))))))
 
-(def number-literal? (set (range 0 10)))
+(def number-literal? (set (map char (range 48 58))))
 
 (def skip-line
   (m/let [r (m/get)
@@ -195,15 +203,15 @@
 
 (defn read-symbol [initch]
   (m/let [token (read-token initch)]
-    (case token
-      "True"      (return t/true*)
-      "False"     (return t/false*)
-      "NaN"       (return t/NaN)
-      "-Infinity" (return t/-Infinity)
-      "Infinity"  (return t/Infinity)
-      (p/case (parse-symbol token)
-        [Right [ns name]] (return (symbol ns name))
-        [Left _ :as err]  err))))
+    (p/case token
+      [Right "True"]      (return t/true*)
+      [Right "False"]     (return t/false*)
+      [Right "NaN"]       (return t/NaN)
+      [Right "-Infinity"] (return t/-Infinity)
+      [Right "Infinity"]  (return t/Infinity)
+      _ (p/case (>>= token parse-symbol)
+          [Right [ns name]] (return (t/symbol ns name))
+          [Left _ :as err]  err))))
 
 (defn read-keyword [initch]
   (m/let [c read-char]
@@ -220,8 +228,7 @@
                                      (return (t/keyword ns name)))
                                    [_ [Left :as err]] err)
                        [Left :as err] err)))
-      [Left :as err] "test"
-      )))
+      [Left :as err] err)))
 
 (defn macros [ch]
   (let [form (case ch
@@ -244,13 +251,39 @@
                \\ read-character
                :not-found)]
     (if (= form :not-found)
-      (t/nothing)
+      t/nothing
       (t/just form))))
+
+(def macro? (comp t/just? macros))
+
+(defn read-number [initch]
+  (m/let [token (read-while (complement #(or (whitespace? %) (macro? %))))]
+    (p/case token
+      [Right token] (let [numstr (str initch token)]
+                      (p/case (number/read numstr)
+                        [Just n] (return (t/right n))
+                        Nothing  (t/error ::not-a-number
+                                          (format "Not a number: %s" numstr))))
+      [Left :as err] err)))
+
+(m/run-state (read-number \1) (string-reader "3.0"))
+
+(defn read* [eof-error? sentinel return-on]
+  (m/let [ch read-char]
+    (p/case ch
+      [Right ch] (cond (whitespace? ch) (read* eof-error? sentinel return-on)
+                       (= ch return-on) (t/right READ_FINISHED)
+                       (number-literal? ch) (read-number ch))
+      [Left EOF] (if eof-error?
+                   (t/error ::EOF "EOF while reading")
+                   (return sentinel))
+      [Left _ :as err] err)))
 
 (defn string-reader [s]
   [s (count s) 0])
 
-(first (m/run-state (read-keyword \:) (string-reader "keyword ")))
+;; (first (m/run-state (read-keyword \:) (string-reader "ns/keyword ")))
+;; (first (m/run-state (read-symbol \a) (string-reader "ns/keyword ")))
 
 ;; (.-b (first (run-state (read-while #(#{\t \e} %)) ["test" 4 0])))
 

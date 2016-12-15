@@ -1,5 +1,5 @@
 (ns flak.type
-  (:refer-clojure :exclude [key name type])
+  (:refer-clojure :exclude [key keyword list map symbol type])
   (:require [clojure.spec :as s]
             [clojure.string :as string]
             [clojure.walk :as walk]
@@ -22,10 +22,10 @@
 (defn kebab-case [x]
   (letfn [(kebabize [s]
             (->> (string/split s word)
-                 (map string/lower-case)
+                 (c/map string/lower-case)
                  (string/join "-")))]
-    (cond (symbol? x)  (symbol (kebabize (c/name x)))
-          (keyword? x) (keyword (kebabize (c/name x)))
+    (cond (symbol? x)  (c/symbol (kebabize (c/name x)))
+          (keyword? x) (c/keyword (kebabize (c/name x)))
           (string? x)  (kebabize x)
           :else        (throw (ex-info (str "Don't know how to kebab:" x)
                                        {:type :unknown-type :x x})))))
@@ -96,23 +96,60 @@
 ;; (data (Maybe a) (or Nothing (Just a)))
 ;; (data (Point Int Int) (Point x y))
 
-(defprotocol Destructurable
-  (-destructure [x]))
+(defprotocol Destructurable (-destructure [x]))
+
 
 (deftype True []) (def true* (True.))
+(defmethod print-method True [m writer] (.write writer "True"))
 (deftype False []) (def false* (False.))
+(defmethod print-method False [m writer] (.write writer "False"))
 (deftype Nothing []) (def nothing (Nothing.))
+(defmethod print-method Nothing [m writer] (.write writer "Nothing"))
+(defn nothing? [x] (= nothing x))
+
 (deftype Just [a])
 (defn just [a] (Just. a))
+(defn just? [a] (instance? Just a))
 (deftype Left [a])
 (defn left [a] (Left. a))
 (deftype Right [b])
 (defn right [b] (Right. b))
 
+(defprotocol Truthy (truthy? [_]))
+(extend-protocol Truthy
+  Boolean (truthy? [x] (if x true* false*))
+  nil     (truthy? [_] false*)
+  True    (truthy? [_] true*)
+  False   (truthy? [_] false*)
+  Just    (truthy? [_] true*)
+  Nothing (truthy? [_] false*)
+  Right   (truthy? [_] true*)
+  Left    (truthy? [_] false*))
+
+(deftype Symbol [ns name])
+(defn symbol
+  ([name] (symbol nothing name))
+  ([ns name] (Symbol. ns name)))
+(defmethod print-method Symbol [m writer]
+  (.write writer
+          (let [ns (.-ns m)
+                name (.-name m)]
+            (if (nothing? ns)
+              name
+              (str ns \/ name)))))
+
 (deftype Keyword [ns name])
 (defn keyword
   ([name] (keyword nothing name))
   ([ns name] (Keyword. ns name)))
+(defmethod print-method Keyword [m writer]
+  (.write writer
+          (let [ns (.-ns m)
+                name (.-name m)]
+            (if (nothing? ns)
+              (str \: name)
+              (str \: ns \/ name)))))
+
 
 (defn unquote-ks [ks x]
   (cond (contains? ks x)
@@ -155,13 +192,13 @@
   (.write writer "#<Nothing>"))
 
 (defmethod print-method Just [m writer]
-  (.write writer (format "#<Just %s>" (.-a m))))
+  (.write writer (format "#<Just %s>" (pr-str (.-a m)))))
 
 (defmethod print-method Left [m writer]
-  (.write writer (format "#<Left %s>" (.-a m))))
+  (.write writer (format "#<Left %s>" (pr-str (.-a m)))))
 
 (defmethod print-method Right [m writer]
-  (.write writer (format "#<Right %s>" (.-b m))))
+  (.write writer (format "#<Right %s>" (pr-str (.-b m)))))
 
 (extend-protocol Destructurable
   Just

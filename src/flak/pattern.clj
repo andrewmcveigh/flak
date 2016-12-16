@@ -87,14 +87,3 @@
   (cons 'or
         (map (fn [[pattern expr]] `(let [~pattern ~e] ~expr))
              (partition 2 bindings))))
-
-;; (case (Just. (Just. (Just. (Point. 0 0))))
-;;   "thing" 8
-;;   [Just 1] 7
-;;   [Point x y] [x y]
-;;   ;; [Just a] a
-;;   [Just [Point x y]] {:x x :y y}
-;;   [Just [Just [Point 0 y]]] {:x 9 :y y}
-;;   [Just [Just [Point x y]]] {:a x :b y}
-;;   _ 10
-;;   )

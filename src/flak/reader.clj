@@ -16,9 +16,6 @@
 (defn fin? [x] (= x FIN))
 (defn eof? [x] (= x EOF))
 
-;; type StringReader = State {:s String :len Int :pos Int} (Either Any Char)
-;; read-char :: Reader -> Reader
-;; peek-char :: Reader -> Reader
 (def read-char
   (m/let [[s len pos] (m/get)]
     (if (> len pos)
@@ -266,8 +263,6 @@
                                           (format "Not a number: %s" numstr))))
       [Left :as err] err)))
 
-(m/run-state (read-number \1) (string-reader "3.0"))
-
 (defn read* [eof-error? sentinel return-on]
   (m/let [ch read-char]
     (p/case ch
@@ -281,10 +276,3 @@
 
 (defn string-reader [s]
   [s (count s) 0])
-
-;; (first (m/run-state (read-keyword \:) (string-reader "ns/keyword ")))
-;; (first (m/run-state (read-symbol \a) (string-reader "ns/keyword ")))
-
-;; (.-b (first (run-state (read-while #(#{\t \e} %)) ["test" 4 0])))
-
-;; (.-a (first (run-state (unread-char "x") ["test" 4 0])))

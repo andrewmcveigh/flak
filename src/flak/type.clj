@@ -87,42 +87,7 @@
          (s/cat :type ::type-constructor
                 :data ::data-constructor)))
 
-
-
-;; (data Dynamic )
-;; (data Boolean (or True False))
-;; (data (Maybe a) (or Nothing (Just a)))
-;; (data (Point Int Int) (Point x y))
-
 (defprotocol Destructurable (-destructure [x]))
-
-
-(deftype True []) (def true* (True.))
-(defmethod print-method True [m writer] (.write writer "True"))
-(deftype False []) (def false* (False.))
-(defmethod print-method False [m writer] (.write writer "False"))
-(deftype Nothing []) (def nothing (Nothing.))
-(defmethod print-method Nothing [m writer] (.write writer "Nothing"))
-(defn nothing? [x] (= nothing x))
-
-(deftype Just [a])
-(defn just [a] (Just. a))
-(defn just? [a] (instance? Just a))
-(deftype Left [a])
-(defn left [a] (Left. a))
-(deftype Right [b])
-(defn right [b] (Right. b))
-
-(defprotocol Truthy (truthy? [_]))
-(extend-protocol Truthy
-  Boolean (truthy? [x] (if x true* false*))
-  nil     (truthy? [_] false*)
-  True    (truthy? [_] true*)
-  False   (truthy? [_] false*)
-  Just    (truthy? [_] true*)
-  Nothing (truthy? [_] false*)
-  Right   (truthy? [_] true*)
-  Left    (truthy? [_] false*))
 
 (deftype Symbol [ns name])
 (defn symbol
@@ -247,37 +212,41 @@
              arglist    (mapv #(if (s/valid? ::type-name %) (gensym) %)
                               (:args variant))]
          `(do
-            (deftype ~type-name ~arglist Destructurable (-destructure ~arglist ~arglist))
-            (defmethod print-method ~type-name [t# writer#]
-              (->> (-destructure t#)
-                   (c/map pr-str)
-                   (string/join ",")
-                   (format "#<%s: %s>" ~(c/name type-name))
-                   (.write writer#)))
-            (defn ~(kebab-case type-name) [value#] (new ~type-name value#))))))
-    (mapv :type (:variants ast))))
+            (deftype ~type-name ~arglist
+              ~@(when (seq arglist)
+                  ['Destructurable
+                   (c/list '-destructure
+                           (mapv (constantly '_) arglist)
+                           arglist)]))
+            (defmethod print-method ~type-name [~'t ~'writer]
+              ~(if (seq arglist)
+                 `(->> (-destructure ~'t)
+                       (c/map pr-str)
+                       (string/join ",")
+                       (format "#<%s: %s>" ~(c/name type-name))
+                       (.write ~'writer))
+                 `(.write ~'writer (format "#<%s>" (c/name ~type-name)))))
+            (defn ~(c/symbol (str (kebab-case (name type-name)) \?)) [~'value]
+              ~(if (seq arglist)
+                 (c/list 'instance? type-name 'value)
+                 (c/list '= type-name 'value)))
+            ~@(when (seq arglist)
+                [(c/list 'defn (kebab-case type-name) ['value]
+                         (c/list 'new type-name 'value))])
+            ~(mapv :type (:variants ast))))))))
 
 (data Boolean (or True False))
-
+(data (Maybe a) (or Nothing (Just a)))
 (data (Either a b) (or (Left a) (Right b)))
 
-(left 2)
-
-;; (get @-reg 'Either)
- 
-;; {:parameters #:flak.type{:type-parameter [a b]}
-;;  :name Either
-;;  :type Sum
-;;  :variants [{:type Left
-;;              :parameters #:flak.type{:type-parameter [a]}
-;;              :args [a]}
-;;             {:type Right
-;;              :parameters #:flak.type{:type-parameter [b]}
-;;              :args [b]}]}
-
-
-;; (data (Either a b) (or (Left a) (Right b)))
-
-;; (data (Maybe a) (or Nothing (Just a)))
-;; (data (Point a a) (Point a a))
-;; (data (Point a b Int) (Point a b Int))
+(defprotocol Truthy (truthy? [_]))
+(extend-protocol Truthy
+  nil     (truthy? [_] false*)
+  Class   (truthy? [x] (cond (true? x)  True
+                             (false? x) False))
+  True    (truthy? [_] true*)
+  False   (truthy? [_] false*)
+  Just    (truthy? [_] true*)
+  Nothing (truthy? [_] false*)
+  Right   (truthy? [_] true*)
+  Left    (truthy? [_] false*))

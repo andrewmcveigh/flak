@@ -6,6 +6,8 @@
             [flak.functor :as f]
             [flak.monad :as m]))
 
+(def ^:private -reg (atom {}))
+
 (alias 'c 'clojure.core)
 
 (def NaN (Object.))
@@ -205,42 +207,77 @@
   (-destructure [x] [(.-b x)]))
 
 (defn type-params [type]
-  (mapv second (::type-args type)))
+  (reduce (fn [init [k v]]
+            (update init k (fnil conj []) v))
+          {}
+          (::type-args type)))
 
 (defn type-constructor-ast [[t tc]]
   (case t
     ::type-name {:type tc}
     ::parameterized-constructor {:type (::type-name tc)
-                                 :parameters (type-params tc)}))
+                                 :parameters (type-params tc)
+                                 :args (c/mapv second (::type-args tc))}))
 
 (defmacro data [& declaration]
   (let [{:keys [type data]} (s/conform ::data-type declaration)
         [t type] type
-        [d data] data]
-    (case t
-      ::parameterized-constructor
-      `{'~(::type-name type)
-        '~(merge {:parameters (type-params type)}
-                 (case d
-                   ::sum-constructor
-                   {:type 'Sum
-                    :variants (mapv type-constructor-ast
-                                    (::type-constructor data))}
-                   ::type-constructor {:type 'Data}))})))
+        [d data] data
+        data-constructor (case d
+                           ::sum-constructor
+                           {:type 'Sum
+                            :variants (mapv type-constructor-ast
+                                            (::type-constructor data))}
+                           ::type-constructor {:type 'Data})
+        [type-name ast]
+        (case t
+          ::parameterized-constructor
+          (let [type-name (::type-name type)]
+            [type-name
+             (merge {:parameters (type-params type) :name type-name}
+                    data-constructor)])
+          ::type-name
+          [type (merge {:name type} data-constructor)])]
+    `(swap! -reg assoc '~type-name '~ast)
+    (cons
+     'do
+     (for [variant (:variants ast)]
+       (let [type-name  (:type variant)
+             parameters (:parameters variant)
+             arglist    (mapv #(if (s/valid? ::type-name %) (gensym) %)
+                              (:args variant))]
+         `(do
+            (deftype ~type-name ~arglist Destructurable (-destructure ~arglist ~arglist))
+            (defmethod print-method ~type-name [t# writer#]
+              (->> (-destructure t#)
+                   (c/map pr-str)
+                   (string/join ",")
+                   (format "#<%s: %s>" ~(c/name type-name))
+                   (.write writer#)))
+            (defn ~(kebab-case type-name) [value#] (new ~type-name value#))))))
+    (mapv :type (:variants ast))))
+
+(data Boolean (or True False))
 
 (data (Either a b) (or (Left a) (Right b)))
-(data (Maybe a) (or Nothing (Just a)))
-(data (Point a a) (Point a a))
-(data (Point a Int) (Point a Int))
 
-(def type-reg
-  (atom
-   {'Boolean {:type 'Sum :variants [{:type 'True} {:type 'False}]}
-    'Maybe   {:type 'Sum
-              :parameters ['a]
-              :variants [{:type 'Nothing}
-                         {:type 'Just :parameters ['a]}]}
-    'Either  {:type 'Sum
-              :parameters ['a 'b]
-              :variants [{:type 'Left :parameters ['a]}
-                         {:type 'Right :parameters ['b]}]}}))
+(left 2)
+
+;; (get @-reg 'Either)
+ 
+;; {:parameters #:flak.type{:type-parameter [a b]}
+;;  :name Either
+;;  :type Sum
+;;  :variants [{:type Left
+;;              :parameters #:flak.type{:type-parameter [a]}
+;;              :args [a]}
+;;             {:type Right
+;;              :parameters #:flak.type{:type-parameter [b]}
+;;              :args [b]}]}
+
+
+;; (data (Either a b) (or (Left a) (Right b)))
+
+;; (data (Maybe a) (or Nothing (Just a)))
+;; (data (Point a a) (Point a a))
+;; (data (Point a b Int) (Point a b Int))

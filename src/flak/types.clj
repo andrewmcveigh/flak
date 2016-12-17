@@ -1,8 +1,12 @@
 (ns flak.types
   (:refer-clojure :exclude [name])
   (:require
+   [flak.functor :as f]
+   [flak.monad :as m]
    [flak.pattern :as p]
-   [flak.type :as t]))
+   [flak.type :as t])
+  (:import
+   [flak.type Literal]))
 
 (defprotocol Named (name [x]))
 
@@ -17,35 +21,13 @@
   (name [[SimpleSymbol name]] name)
   (name [[Symbol _     name]] name))
 
-(t/instance Show Int
-  (show [x] (str x)))
+(t/instance t/Show Symbol
+  (show [[SimpleSymbol name]] name)
+  (show [[Symbol    ns name]] (str ns \/ name)))
 
-[:gen ({:name show, :args [x], :expr (str x)})]
-
-[:spc ({:name name
-        :args [{:type SimpleSymbol
-                :args [[:binding [:binding name]]]}]
-        :expr name}
-       {:name name
-        :args [{:type Symbol
-                :args [[:binding [:binding _]] [:binding [:binding name]]]}]
-        :expr name})]
-
-(extend-protocol Show
-  Symbol
-  (show [t]
-    (let [[ns name] (-destructure t)]
-      (if (nothing? ns)
-        name
-        (str ns \/ name)))))
-
-(extend-protocol Show
-  Keyword
-  (show [t]
-    (let [[ns name] (-destructure t)]
-      (if (nothing? ns)
-        (str \: name)
-        (str \: ns \/ name)))))
+(t/instance t/Show Keyword
+  (show [[SimpleKeyword name]] (str \: name))
+  (show [[Keyword    ns name]] (str \: ns \/ name)))
 
 (defmacro error
   ([type msg]
@@ -67,9 +49,9 @@
   (m/m-return [_ v] (right v))
   (m/m-bind   [m f] (f (.-b m))))
 
-(extend-protocol Truthy
-  nil     (truthy? [_] False)
-  Literal (truthy? [x] (if (true? x) True False))
-  Just    (truthy? [_] True)
-  Right   (truthy? [_] True)
-  Left    (truthy? [_] False))
+(extend-protocol t/Truthy
+  nil     (t/truthy? [_] False)
+  Literal (t/truthy? [x] (if (true? x) True False))
+  Just    (t/truthy? [_] True)
+  Right   (t/truthy? [_] True)
+  Left    (t/truthy? [_] False))

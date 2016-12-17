@@ -176,17 +176,25 @@
      (register-signature! '~(qualify *ns* name) 
                           (spec/conform ::s/signature '~signature))))
 
+(defn render-bindings [bindings]
+  (mapv (comp (fn [[t x]]
+                (case t :binding x))
+              second)
+        bindings))
+
 (defmacro instance [typeclass type & impls]
   (let [[t impls'] (spec/conform ::s/instance-impl impls)]
     `(do
        ~@(case t
            :gen (for [{:keys [name args expr]} impls']
                   `(extend-protocol ~typeclass ~type (~name ~args ~expr)))
-           :spc (for [{:keys [name args expr]} impls'
-                      [{:keys [type args]}] args]
-                  `(extend-protocol ~typeclass ~type (~name ~args ~expr)))
-))
-    ))
+           :spc (for [{:keys [name args expr]} impls']
+                  (let [{:keys [type args]} (first args)]
+                    `(extend-protocol ~typeclass
+                       ~type
+                       (~name [x#]
+                        (let  [~(render-bindings args) (-destructure x#)]
+                          ~expr)))))))))
 
 ;; (defmacro guard [x & guards])
 

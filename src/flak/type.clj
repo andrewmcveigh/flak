@@ -162,7 +162,8 @@
        '~type-name)))
 
 (defn register-signature! [name ast]
-  (swap! -signatures assoc name ast))
+  (swap! -signatures assoc name ast)
+  name)
 
 (defn- ->sym [v]
   (symbol (str (.name (.ns v))) (str (.sym v))))
@@ -172,9 +173,13 @@
       (symbol (name (.name ns)) (name x))))
 
 (defmacro def [name & signature]
-  `(do
-     (register-signature! '~(qualify *ns* name) 
-                          (spec/conform ::s/signature '~signature))))
+  `(let [ast# (spec/conform ::s/signature '~signature)]
+     (if (= ::spec/invalid ast#)
+       (throw (ex-info (format "Invalid type signature %s" ~(pr-str signature))
+                       {:type ::invalid-type-signature
+                         :signature '~signature
+                        :ast ast#}))
+       (register-signature! '~(qualify *ns* name) ast#))))
 
 (defn render-bindings [bindings]
   (mapv (comp (fn [[t x]]

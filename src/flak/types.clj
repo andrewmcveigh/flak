@@ -10,11 +10,11 @@
 
 (defprotocol Named (name [x]))
 
-(t/data Boolean (or True False))
-(t/data (Maybe a) (or Nothing (Just a)))
+(t/data  Boolean     (or True False))
+(t/data (Maybe a)    (or Nothing (Just a)))
 (t/data (Either a b) (or (Left a) (Right b)))
-(t/data Symbol (or (SimpleSymbol String) (Symbol String String)))
-(t/data Keyword (or (SimpleKeyword String) (Keyword String String)))
+(t/data  Symbol      (or (SimpleSymbol String) (Symbol String String)))
+(t/data  Keyword     (or (SimpleKeyword String) (Keyword String String)))
 
 (t/def name Named -> String)
 (t/instance Named Symbol
@@ -35,6 +35,7 @@
   ([type msg e]
    `(left (ex-info ~msg {:type ~type :cause ~e}))))
 
+;; (t/def fmap (a -> b) -> ((f a) -> (f b)))
 (extend-protocol f/Functor
   Left
   (f/-fmap [Fa f] Fa)

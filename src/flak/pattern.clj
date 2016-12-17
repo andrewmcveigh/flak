@@ -1,26 +1,11 @@
 (ns flak.pattern
   (:refer-clojure :exclude [case destructure let])
-  (:require [clojure.spec :as s]
-            [flak.type :as T]))
+  (:require
+   [clojure.spec :as spec]
+   [flak.spec :as s]
+   [flak.type :as T]))
 
 (alias 'c 'clojure.core)
-
-(s/def ::case-binding
-  (s/or :type    ::T/type-name
-        :literal (s/and #(not (s/valid? ::case-destructuring %))
-                        (complement #{:as})
-                        (complement symbol?))
-        :binding symbol?))
-
-(s/def ::case-destructuring
-  (s/and vector?
-         (s/cat :type (s/? ::T/type-name)
-                :args (s/+ ::case-pattern)
-                :bind (s/? (s/cat :as #{:as} :binding symbol?)))))
-
-(s/def ::case-pattern
-  (s/or :binding ::case-binding
-        :destructuring ::case-destructuring))
 
 (defn arg-bindings [[t v g?]]
   (c/case t
@@ -80,7 +65,7 @@
 (defmacro let [bindings expr]
   (c/let [[bind value] (take 2 bindings)]
     (when (and bind value)
-      (c/let [[match mval] (s/conform ::case-pattern bind)]
+      (c/let [[match mval] (spec/conform ::s/pattern bind)]
         (let-destructure match mval value expr)))))
 
 (defmacro case [e & bindings]

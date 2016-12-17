@@ -1,5 +1,10 @@
 (ns flak.types
-  (:require [flak.type :as t]))
+  (:refer-clojure :exclude [name])
+  (:require
+   [flak.pattern :as p]
+   [flak.type :as t]))
+
+(defprotocol Named (name [x]))
 
 (t/data Boolean (or True False))
 (t/data (Maybe a) (or Nothing (Just a)))
@@ -7,14 +12,24 @@
 (t/data Symbol (or (SimpleSymbol String) (Symbol String String)))
 (t/data Keyword (or (SimpleKeyword String) (Keyword String String)))
 
-(extend-protocol Named
-  Symbol
-  (name [x]
-    (p/case x
-      [SimpleSymbol name] name
-      [Symbol _ name]     name)))
+(t/def name Named -> String)
+(t/instance Named Symbol
+  (name [[SimpleSymbol name]] name)
+  (name [[Symbol _     name]] name))
 
-(t/def name (Named a) -> (String -> (Named a)))
+(t/instance Show Int
+  (show [x] (str x)))
+
+[:gen ({:name show, :args [x], :expr (str x)})]
+
+[:spc ({:name name
+        :args [{:type SimpleSymbol
+                :args [[:binding [:binding name]]]}]
+        :expr name}
+       {:name name
+        :args [{:type Symbol
+                :args [[:binding [:binding _]] [:binding [:binding name]]]}]
+        :expr name})]
 
 (extend-protocol Show
   Symbol

@@ -1,11 +1,12 @@
 (ns flak.type
-  (:refer-clojure :exclude [def key keyword list map symbol type])
-  (:require [clojure.spec :as s]
-            [clojure.string :as string]
-            [clojure.walk :as walk]
-            [flak.functor :as f]
-            [flak.monad :as m]
-            [flak.pattern :as p]))
+  (:refer-clojure :exclude [def list map type])
+  (:require
+   [clojure.spec :as spec]
+   [clojure.string :as string]
+   [clojure.walk :as walk]
+   [flak.functor :as f]
+   [flak.monad :as m]
+   [flak.spec :as s]))
 
 (alias 'c 'clojure.core)
 
@@ -13,10 +14,10 @@
 (defprotocol Value (-value [_]))
 (defprotocol Destructurable (-destructure [x]))
 (defprotocol Truthy (truthy? [_]))
-(defprotocol Named (name [x]))
 
 (def ^:private -reg (atom {}))
 (def ^:private -literals (atom #{}))
+(def ^:private -signatures (atom {}))
 
 (deftype Literal [s])
 (defmethod print-method Literal [t writer]
@@ -53,12 +54,12 @@
        (.write writer# (format "#<%s: %s>" ~(c/name name) (pr-str (-value t#)))))
      (defn ~(kebab-case name) [value#]
        (let [spec# ~spec]
-         (assert (s/valid? spec# value#)
+         (assert (spec/valid? spec# value#)
                  (format "Value did not match spec: %s\n%s" spec#
-                         (s/explain-data spec# value#))))
+                         (spec/explain-data spec# value#))))
        (new ~name value#))
-     (s/fdef ~(kebab-case name)
-       :args (s/cat :value ~spec)
+     (spec/fdef ~(kebab-case name)
+       :args (spec/cat :value ~spec)
        :ret (partial instance? ~name))))
 
 (type Character char?)
@@ -69,67 +70,37 @@
 (type Vector    vector?)
 (type Map       map?)
 
-(s/def ::type-name
-  (s/and symbol? #(re-matches #"^[A-Z][A-Za-z]*$" (c/name %))))
-
-(s/def ::type-parameter
-  (s/and symbol? #(re-matches #"^[a-z]$" (c/name %))))
-
-(s/def ::type-args
-  (s/+ (s/or ::type-name ::type-name ::type-parameter ::type-parameter)))
-
-(s/def ::parameterized-constructor
-  (s/and list? (s/cat ::type-name ::type-name ::type-args ::type-args)))
-
-(s/def ::type-constructor
-  (s/or ::type-name ::type-name
-        ::parameterized-constructor ::parameterized-constructor))
-
-(s/def ::sum-constructor
-  (s/and list?
-         (s/cat :_ #(= % 'or)
-                ::type-constructor (s/+ ::type-constructor))))
-
-(s/def ::data-constructor
-  (s/or ::type-constructor ::type-constructor
-        ::sum-constructor ::sum-constructor))
-
-(s/def ::data-type
-  (s/and list?
-         (s/cat :type ::type-constructor
-                :data ::data-constructor)))
-
 (defn type-params [type]
   (reduce (fn [init [k v]]
             (update init k (fnil conj []) v))
           {}
-          (::type-args type)))
+          (::s/type-args type)))
 
 (defn type-constructor-ast [[t tc]]
   (case t
-    ::type-name {:type tc}
-    ::parameterized-constructor {:type (::type-name tc)
+    ::s/type-name {:type tc}
+    ::s/parameterized-constructor {:type (::s/type-name tc)
                                  :parameters (type-params tc)
-                                 :args (c/mapv second (::type-args tc))}))
+                                 :args (c/mapv second (::s/type-args tc))}))
 
 (defn data-constructor-ast [[d data]]
   (case d
-    ::sum-constructor
+    ::s/sum-constructor
     {:type 'Sum
      :variants (mapv type-constructor-ast
-                     (::type-constructor data))}
-    ::type-constructor
+                     (::s/type-constructor data))}
+    ::s/type-constructor
     {:type 'Data
      :constructor (type-constructor-ast data)}))
 
 (defn type-ast [[t type] data-constructor]
   (case t
-    ::parameterized-constructor
-    (let [type-name (::type-name type)]
+    ::s/parameterized-constructor
+    (let [type-name (::s/type-name type)]
       [type-name
        (merge {:parameters (type-params type) :name type-name}
               data-constructor)])
-    ::type-name
+    ::s/type-name
     [type (merge {:name type} data-constructor)]))
 
 (defn is-sym? [s]
@@ -154,19 +125,23 @@
          (throw
           (Exception.
            (str "Type " '~type-name " doesn't implement Show")))))
+     ~(when (resolve (kebab-case type-name))
+        `(ns-unmap *ns* '~(kebab-case type-name)))
      (defn ~(kebab-case type-name) ~arglist
        (new ~type-name ~@arglist))
+     ~(when (resolve (is-sym? type-name))
+        `(ns-unmap *ns* '~(is-sym? type-name)))
      (defn ~(is-sym? type-name) [value#]
        (instance? ~type-name value#))))
 
 (defn normalize-arglist [args]
-  (mapv #(if (s/valid? ::type-name %) (gensym) %) args))
+  (mapv #(if (spec/valid? ::s/type-name %) (gensym) %) args))
 
 (defn register-type! [type-name ast]
   (swap! -reg assoc type-name ast))
 
 (defmacro data [& declaration]
-  (let [{:keys [type data]} (s/conform ::data-type declaration)
+  (let [{:keys [type data]} (spec/conform ::s/data-type declaration)
         data-constructor    (data-constructor-ast data)
         [type-name ast]     (type-ast type data-constructor)]
     `(do
@@ -186,20 +161,32 @@
                  (def-literal type-name)))))
        '~type-name)))
 
-(s/def ::-> (partial = '->))
+(defn register-signature! [name ast]
+  (swap! -signatures assoc name ast))
 
-(s/def ::signature
-  (s/and sequential?
-         (s/cat :input ::type-constructor
-                :_ ::->
-                :return (s/or :value ::type-constructor
-                              :function ::signature))))
+(defn- ->sym [v]
+  (symbol (str (.name (.ns v))) (str (.sym v))))
+
+(defn qualify [ns x]
+  (or (some-> x resolve ->sym)
+      (symbol (name (.name ns)) (name x))))
 
 (defmacro def [name & signature]
-  (s/conform ::signature signature))
+  `(do
+     (register-signature! '~(qualify *ns* name) 
+                          (spec/conform ::s/signature '~signature))))
 
-
-;; ;; (t/def add Int -> Int -> Int)
+(defmacro instance [typeclass type & impls]
+  (let [[t impls'] (spec/conform ::s/instance-impl impls)]
+    `(do
+       ~@(case t
+           :gen (for [{:keys [name args expr]} impls']
+                  `(extend-protocol ~typeclass ~type (~name ~args ~expr)))
+           :spc (for [{:keys [name args expr]} impls'
+                      [{:keys [type args]}] args]
+                  `(extend-protocol ~typeclass ~type (~name ~args ~expr)))
+))
+    ))
 
 ;; (defmacro guard [x & guards])
 

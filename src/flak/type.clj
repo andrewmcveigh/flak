@@ -1,18 +1,31 @@
 (ns flak.type
-  (:refer-clojure :exclude [key keyword list map symbol type])
+  (:refer-clojure :exclude [def key keyword list map symbol type])
   (:require [clojure.spec :as s]
             [clojure.string :as string]
             [clojure.walk :as walk]
             [flak.functor :as f]
-            [flak.monad :as m]))
-
-(def ^:private -reg (atom {}))
+            [flak.monad :as m]
+            [flak.pattern :as p]))
 
 (alias 'c 'clojure.core)
 
-(def NaN (Object.))
-(def -Infinity (Object.))
-(def Infinity (Object.))
+(defprotocol Show (show [t]))
+(defprotocol Value (-value [_]))
+(defprotocol Destructurable (-destructure [x]))
+(defprotocol Truthy (truthy? [_]))
+(defprotocol Named (name [x]))
+
+(def ^:private -reg (atom {}))
+(def ^:private -literals (atom #{}))
+
+(deftype Literal [s])
+(defmethod print-method Literal [t writer]
+  (.write writer (name (.-s t))))
+
+
+(def NaN (Literal. 'NaN))
+(def -Infinity (Literal. '-Infinity))
+(def Infinity (Literal. 'Infinity))
 
 (def exclude-java-classes
   '[Character String Integer Boolean])
@@ -32,7 +45,6 @@
           :else        (throw (ex-info (str "Don't know how to kebab:" x)
                                        {:type :unknown-type :x x})))))
 
-(defprotocol Value (-value [_]))
 
 (defmacro type [name spec]
   `(do
@@ -87,90 +99,6 @@
          (s/cat :type ::type-constructor
                 :data ::data-constructor)))
 
-(defprotocol Destructurable (-destructure [x]))
-
-(deftype Symbol [ns name])
-(defn symbol
-  ([name] (symbol nothing name))
-  ([ns name] (Symbol. ns name)))
-(defmethod print-method Symbol [m writer]
-  (.write writer
-          (let [ns (.-ns m)
-                name (.-name m)]
-            (if (nothing? ns)
-              name
-              (str ns \/ name)))))
-
-(deftype Keyword [ns name])
-(defn keyword
-  ([name] (keyword nothing name))
-  ([ns name] (Keyword. ns name)))
-(defmethod print-method Keyword [m writer]
-  (.write writer
-          (let [ns (.-ns m)
-                name (.-name m)]
-            (if (nothing? ns)
-              (str \: name)
-              (str \: ns \/ name)))))
-
-
-(defn unquote-ks [ks x]
-  (cond (contains? ks x)
-        x
-        (symbol? x)
-        (c/list 'quote x)
-        (seq? x)
-        (cons 'list x)
-        :else x))
-
-(defmacro either [test expr]
-  (let [ks (set (keys &env))]
-    `(if ~test
-       ~expr
-       (m/m-return (left nil)
-                   (left (c/list 'clojure.core/not
-                                 ~(walk/postwalk (partial unquote-ks ks) test)))))))
-
-(defmacro error
-  ([type msg]
-   `(left (ex-info ~msg {:type ~type})))
-  ([type msg e]
-   `(left (ex-info ~msg {:type ~type :cause ~e}))))
-
-(extend-protocol f/Functor
-  Left
-  (f/-fmap [Fa f] Fa)
-  Right
-  (f/-fmap [Fa f] (right (f (.-b Fa)))))
-
-(extend-protocol m/Monad
-  Left
-  (m/m-return [_ v] (right v))
-  (m/m-bind   [m f] m)
-  Right
-  (m/m-return [_ v] (right v))
-  (m/m-bind   [m f] (f (.-b m))))
-
-(defmethod print-method Nothing [m writer]
-  (.write writer "#<Nothing>"))
-
-(defmethod print-method Just [m writer]
-  (.write writer (format "#<Just %s>" (pr-str (.-a m)))))
-
-(defmethod print-method Left [m writer]
-  (.write writer (format "#<Left %s>" (pr-str (.-a m)))))
-
-(defmethod print-method Right [m writer]
-  (.write writer (format "#<Right %s>" (pr-str (.-b m)))))
-
-(extend-protocol Destructurable
-  Just
-  (-destructure [x] [(.-a x)])
-  Left
-  (-destructure [x] [(.-a x)])
-  Right
-  (-destructure [x] [(.-b x)]))
-
 (defn type-params [type]
   (reduce (fn [init [k v]]
             (update init k (fnil conj []) v))
@@ -184,69 +112,99 @@
                                  :parameters (type-params tc)
                                  :args (c/mapv second (::type-args tc))}))
 
+(defn data-constructor-ast [[d data]]
+  (case d
+    ::sum-constructor
+    {:type 'Sum
+     :variants (mapv type-constructor-ast
+                     (::type-constructor data))}
+    ::type-constructor
+    {:type 'Data
+     :constructor (type-constructor-ast data)}))
+
+(defn type-ast [[t type] data-constructor]
+  (case t
+    ::parameterized-constructor
+    (let [type-name (::type-name type)]
+      [type-name
+       (merge {:parameters (type-params type) :name type-name}
+              data-constructor)])
+    ::type-name
+    [type (merge {:name type} data-constructor)]))
+
+(defn is-sym? [s]
+  (c/symbol (str (kebab-case (name s)) \?)))
+
+(defn def-literal [type-name]
+  `(do
+     (ns-unmap ~*ns* '~type-name)
+     (def ~type-name (Literal. '~type-name))
+     (defn ~(is-sym? type-name) [value#]
+       (= ~type-name value#))))
+
+(defn def-parameterized-type [type-name arglist]
+  `(do
+     ;; ~(when (resolve type-name) `(ns-unmap ~*ns* '~type-name))
+     (deftype ~type-name ~arglist
+       Destructurable
+       (-destructure [~'_] ~arglist))
+     (defmethod print-method ~type-name [c# writer#]
+       (if (satisfies? Show c#)
+         (.write writer# (show c#))
+         (throw
+          (Exception.
+           (str "Type " '~type-name " doesn't implement Show")))))
+     (defn ~(kebab-case type-name) ~arglist
+       (new ~type-name ~@arglist))
+     (defn ~(is-sym? type-name) [value#]
+       (instance? ~type-name value#))))
+
+(defn normalize-arglist [args]
+  (mapv #(if (s/valid? ::type-name %) (gensym) %) args))
+
+(defn register-type! [type-name ast]
+  (swap! -reg assoc type-name ast))
+
 (defmacro data [& declaration]
   (let [{:keys [type data]} (s/conform ::data-type declaration)
-        [t type] type
-        [d data] data
-        data-constructor (case d
-                           ::sum-constructor
-                           {:type 'Sum
-                            :variants (mapv type-constructor-ast
-                                            (::type-constructor data))}
-                           ::type-constructor {:type 'Data})
-        [type-name ast]
-        (case t
-          ::parameterized-constructor
-          (let [type-name (::type-name type)]
-            [type-name
-             (merge {:parameters (type-params type) :name type-name}
-                    data-constructor)])
-          ::type-name
-          [type (merge {:name type} data-constructor)])]
-    `(swap! -reg assoc '~type-name '~ast)
-    (cons
-     'do
-     (for [variant (:variants ast)]
-       (let [type-name  (:type variant)
-             parameters (:parameters variant)
-             arglist    (mapv #(if (s/valid? ::type-name %) (gensym) %)
-                              (:args variant))]
-         `(do
-            (deftype ~type-name ~arglist
-              ~@(when (seq arglist)
-                  ['Destructurable
-                   (c/list '-destructure
-                           (mapv (constantly '_) arglist)
-                           arglist)]))
-            (defmethod print-method ~type-name [~'t ~'writer]
-              ~(if (seq arglist)
-                 `(->> (-destructure ~'t)
-                       (c/map pr-str)
-                       (string/join ",")
-                       (format "#<%s: %s>" ~(c/name type-name))
-                       (.write ~'writer))
-                 `(.write ~'writer (format "#<%s>" (c/name ~type-name)))))
-            (defn ~(c/symbol (str (kebab-case (name type-name)) \?)) [~'value]
-              ~(if (seq arglist)
-                 (c/list 'instance? type-name 'value)
-                 (c/list '= type-name 'value)))
-            ~@(when (seq arglist)
-                [(c/list 'defn (kebab-case type-name) ['value]
-                         (c/list 'new type-name 'value))])
-            ~(mapv :type (:variants ast))))))))
+        data-constructor    (data-constructor-ast data)
+        [type-name ast]     (type-ast type data-constructor)]
+    `(do
+       (register-type! '~type-name '~ast)
+       ~@(if (= 'Data (:type ast))
+           (let [{:keys [type args]} (:constructor ast)
+                 arglist (normalize-arglist args)]
+             [(if (seq arglist)
+                (def-parameterized-type type-name args)
+                (def-literal type-name))])
+           (for [variant (:variants ast)]
+             (let [type-name  (:type variant)
+                   parameters (:parameters variant)
+                   arglist    (normalize-arglist (:args variant))]
+               (if (seq arglist)
+                 (def-parameterized-type type-name arglist)
+                 (def-literal type-name)))))
+       '~type-name)))
 
-(data Boolean (or True False))
-(data (Maybe a) (or Nothing (Just a)))
-(data (Either a b) (or (Left a) (Right b)))
+(s/def ::-> (partial = '->))
 
-(defprotocol Truthy (truthy? [_]))
-(extend-protocol Truthy
-  nil     (truthy? [_] false*)
-  Class   (truthy? [x] (cond (true? x)  True
-                             (false? x) False))
-  True    (truthy? [_] true*)
-  False   (truthy? [_] false*)
-  Just    (truthy? [_] true*)
-  Nothing (truthy? [_] false*)
-  Right   (truthy? [_] true*)
-  Left    (truthy? [_] false*))
+(s/def ::signature
+  (s/and sequential?
+         (s/cat :input ::type-constructor
+                :_ ::->
+                :return (s/or :value ::type-constructor
+                              :function ::signature))))
+
+(defmacro def [name & signature]
+  (s/conform ::signature signature))
+
+
+;; ;; (t/def add Int -> Int -> Int)
+
+;; (defmacro guard [x & guards])
+
+;; (let [x (dynamic 1 2 3)]
+;;   (guard x
+;;          Boolean (p/case x True 1 False 2)
+;;          Keyword (name x)))
+

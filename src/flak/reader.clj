@@ -31,9 +31,14 @@
 
 (defn unread-char [c]
   (m/let [[s len pos] (m/get)]
-    (t/either (and (> pos 0) (= c (nth s (dec pos))))
-              (m/let [_ (m/modify update 2 dec)]
-                (return (t/right c))))))
+    (if (> pos 0)
+      (if (= c (nth s (dec pos)))
+        (m/let [_ (m/modify update 2 dec)]
+          (return (t/right c)))
+        (return (t/error ::unread-char-incorrect
+                         "Cannot unread when c was not last char read")))
+      (return (t/error ::reader-start
+                       "Cannot unread-cha when no char has been read")))))
 
 (defn read-while [p]
   (m/let [c read-char]

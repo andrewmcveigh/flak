@@ -4,9 +4,12 @@
    [flak.functor :as f]
    [flak.monad :as m]
    [flak.pattern :as p]
-   [flak.type :as t])
+   [flak.source :refer [source]]
+   [flak.type :as t]
+   [clojure.java.io :as io])
   (:import
-   [flak.type Literal]))
+   [flak.type Literal]
+   [java.io LineNumberReader PushbackReader]))
 
 (defprotocol Named (name [x]))
 
@@ -16,6 +19,12 @@
 (t/data  Symbol      (or (SimpleSymbol String) (Symbol String String)))
 (t/data  Keyword     (or (SimpleKeyword String) (Keyword String String)))
 
+
+
+(defn is-nothing? [a] (nothing? a))
+(source is-nothing?)
+
+(t/def nothing? (Maybe a) -> Boolean)
 (t/def name Named -> String)
 (t/instance Named Symbol
   (name [[SimpleSymbol name]] name)

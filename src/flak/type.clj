@@ -41,7 +41,6 @@
           :else        (throw (ex-info (str "Don't know how to kebab:" x)
                                        {:type :unknown-type :x x})))))
 
-
 (defmacro type [name spec]
   `(do
      ~(when (resolve name)
@@ -167,11 +166,20 @@
        (throw (ex-info (format "Invalid type signature %s" ~(pr-str signature))
                        {:type ::invalid-type-signature
                         :signature '~signature
-                        :ast ast#}))
+                        :ast ast#
+                        :how (spec/explain-data ::s/signature '~signature)}))
        (register-signature! '~(qualify *ns* name) ast#))))
 
 (defmacro class [& decl]
-  (let [{:keys [class tvars tsign]} (spec/conform ::s/class-decl decl)
+  (let [class-decl (spec/conform ::s/class-decl decl)
+        _ (when (= ::spec/invalid class-decl)
+            (throw (ex-info (format "Invalid class signature %s"
+                                    (pr-str decl))
+                            {:type ::invalid-type-signature
+                             :signature decl
+                             :how (spec/explain-data ::s/class-decl
+                                                     class-decl)})))
+        {:keys [class tvars tsign]} class-decl
         tsig (spec/unform ::s/class-function-signature (:tsig tsign))]
     `(do
        (t/def ~(:name tsign) ~class ~@tvars ~'=> ~@tsig)
@@ -196,6 +204,22 @@
                        (~name [x#]
                         (let  [~(render-bindings args) (~'destructure x#)]
                           ~expr)))))))))
+
+(defn signature [sym]
+  (get @-signatures sym))
+
+(defmacro infer [expr]
+  (let [[op :as expr'] (macroexpand expr)]
+    (case op
+      'fn* (let [argspec (spec/coll-of :clojure.core.specs/args+body
+                                       :max-count 1)
+                 [sig] (spec/conform argspec (rest expr'))
+                 args (-> sig :args :args)
+                 expr (-> sig :body first)]
+             `['~(mapv second args) '~expr])
+      )))
+
+;; (infer* 'x)
 
 ;; (defmacro guard [x & guards])
 

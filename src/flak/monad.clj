@@ -1,11 +1,21 @@
 (ns flak.monad
-  (:refer-clojure :exclude [get let]))
+  (:refer-clojure :exclude [get let])
+  (:require [flak.type :as t]))
 
 (alias 'c 'clojure.core)
 
-(defprotocol Monad
-  (m-return [_ v])
-  (m-bind [mv f]))
+(t/class Monad m
+  (>>=     m a -> (a -> m b) -> m b)
+  (>>      m a -> m b -> m b)
+  ;; (return  a -> m a)
+  (fail    String -> m a))
+
+(clojure.spec/explain-data :flak.spec/class-decl
+                           '(Monad m
+                              (>>=     m a -> (a -> m b) -> m b)
+                              (>>      m a -> m b -> m b)
+                              (return  a -> m a)
+                              (fail    String -> m a)))
 
 (deftype State [f]
   Monad
@@ -46,7 +56,9 @@
   (second (run-state s)))
 
 (defn return [& args]
-  (throw (RuntimeException. "return must only be called inside mlet context")))
+  (throw
+   (RuntimeException.
+    "return must only be called inside flak.monad/let context")))
 
 (defmacro let [bindings expr]
   (c/let [mt     (second bindings)

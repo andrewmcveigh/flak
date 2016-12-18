@@ -1,4 +1,4 @@
-(def +project+ 'speculative-development)
+(def +project+ 'flak)
 (def +version+ "0.1.0-SNAPSHOT")
 
 (def dependencies

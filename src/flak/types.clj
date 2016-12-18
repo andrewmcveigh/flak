@@ -71,7 +71,7 @@
 
 (extend-protocol Truthy
   nil     (truthy? [_] False)
-  Literal (truthy? [x] (if (true? x) True False))
+  ;; Literal (truthy? [x] (if (true? x) True False))
   Just    (truthy? [_] True)
   Right   (truthy? [_] True)
   Left    (truthy? [_] False))

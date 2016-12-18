@@ -58,7 +58,7 @@
 
 (s/def ::signature
   (s/and sequential?
-         (s/cat :class ::typeclass-sig
+         (s/cat :class (s/? ::typeclass-sig)
                 :input ::type-constructor
                 :_ ::->
                 :return (s/or :value ::type-constructor
@@ -94,9 +94,9 @@
                        :function ::signature)))
 
 (s/def ::class-decl
-  (s/and list?
+  (s/and seq?
          (s/cat :class ::type-name
                 :tvars (s/+ ::type-parameter)
-                :tsign (s/and list?
-                              (s/cat :name :clojure.core.specs/local-name
-                                     :tsig ::class-function-signature)))))
+                :tsign (s/+ (s/and seq?
+                                   (s/cat :name :clojure.core.specs/local-name
+                                          :tsig ::class-function-signature))))))

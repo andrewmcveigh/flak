@@ -2,10 +2,10 @@
   (:require [clojure.spec :as s]))
 
 (s/def ::type-name
-  (s/and symbol? #(re-matches #"^[A-Z][A-Za-z]*$" (name %))))
+  (s/and simple-symbol? #(re-matches #"^[A-Z][A-Za-z]*$" (name %))))
 
 (s/def ::type-parameter
-  (s/and symbol? #(re-matches #"^[a-z]$" (name %))))
+  (s/and simple-symbol? #(re-matches #"^[a-z]$" (name %))))
 
 (s/def ::type-args
   (s/+ (s/or ::type-name ::type-name ::type-parameter ::type-parameter)))
@@ -50,9 +50,15 @@
 
 (s/def ::-> (partial = '->))
 
+(s/def ::typeclass-sig
+  (s/cat :class ::type-name
+         :tvars (s/+ ::type-parameter)
+         :=>    (partial = '=>)))
+
 (s/def ::signature
   (s/and sequential?
-         (s/cat :input ::type-constructor
+         (s/cat :class (s/? ::typeclass-sig)
+                :input ::type-constructor
                 :_ ::->
                 :return (s/or :value ::type-constructor
                               :function ::signature))))
@@ -79,3 +85,17 @@
 (s/def ::instance-impl
   (s/or :gen (s/coll-of ::generic-instance-impl :kind list? :max-count 1)
         :spc (s/coll-of ::specific-instance-impl :kind list?)))
+
+(s/def ::class-function-signature
+  (s/cat :input ::type-parameter
+         :_ ::->
+         :return (s/or :value ::type-constructor
+                       :function ::signature)))
+
+(s/def ::class-decl
+  (s/and list?
+         (s/cat :class ::type-name
+                :tvars (s/+ ::type-parameter)
+                :tsign (s/and list?
+                              (s/cat :name :clojure.core.specs/local-name
+                                     :tsig ::class-function-signature)))))

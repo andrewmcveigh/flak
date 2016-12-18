@@ -5,30 +5,42 @@
    [flak.monad :as m]
    [flak.pattern :as p]
    [flak.source :refer [source]]
-   [flak.type :as t]
-   [clojure.java.io :as io])
+   [flak.type :as t])
   (:import
    [flak.type Literal]
    [java.io LineNumberReader PushbackReader]))
 
 (defprotocol Named (name [x]))
+(t/def name Named -> String)
+
+(t/class Named a
+  (name a -> String))
+
+(t/class Named a
+  (name a -> String))
+
+(clojure.spec/conform :flak.spec/signature '(Named a => a -> String))
 
 (t/data  Boolean     (or True False))
 (t/data (Maybe a)    (or Nothing (Just a)))
 (t/data (Either a b) (or (Left a) (Right b)))
 (t/data  Symbol      (or (SimpleSymbol String) (Symbol String String)))
 (t/data  Keyword     (or (SimpleKeyword String) (Keyword String String)))
+;; (t/data  List a      (or Nil (Cons a (List a))))
 
+;; (t/def is-nothing? (Maybe a) -> Boolean)
+;; (defn is-nothing? [a] (nothing? a))
+;; (source is-nothing?)
+;; '(defn is-nothing? [a] (nothing? a))
 
-
-(defn is-nothing? [a] (nothing? a))
-(source is-nothing?)
-
-(t/def nothing? (Maybe a) -> Boolean)
-(t/def name Named -> String)
+;; (t/def nothing? (Maybe a) -> Boolean)
 (t/instance Named Symbol
   (name [[SimpleSymbol name]] name)
   (name [[Symbol _     name]] name))
+
+(t/instance Named Keyword
+  (name [[SimpleKeyword name]] name)
+  (name [[Keyword _     name]] name))
 
 (t/instance t/Show Symbol
   (show [[SimpleSymbol name]] name)

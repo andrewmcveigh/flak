@@ -1,5 +1,5 @@
 (ns flak.type
-  (:refer-clojure :exclude [def list map type])
+  (:refer-clojure :exclude [class def list map type])
   (:require
    [clojure.spec :as spec]
    [clojure.string :as string]
@@ -180,6 +180,13 @@
                          :signature '~signature
                         :ast ast#}))
        (register-signature! '~(qualify *ns* name) ast#))))
+
+(defmacro class [& decl]
+  (let [{:keys [class tvars tsign]} (spec/conform ::s/class-decl decl)
+        tsig (spec/unform ::s/class-function-signature (:tsig tsign))]
+    `(do
+       (t/def ~(:name tsign) ~class ~@tvars ~'=> ~@tsig)
+       (defprotocol ~class (~(:name tsign) ~tvars)))))
 
 (defn render-bindings [bindings]
   (mapv (comp (fn [[t x]]

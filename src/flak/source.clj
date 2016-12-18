@@ -1,6 +1,6 @@
 (ns flak.source
   (:require
-   [clojure.repl :as r]
+   [clojure.java.io :as io]
    [flak.type :as t])
   (:import
    [java.io LineNumberReader PushbackReader]))

@@ -15,6 +15,7 @@
 
 (s/def ::type-constructor
   (s/or ::type-name ::type-name
+        ::type-var  ::type-parameter
         ::parameterized-constructor ::parameterized-constructor))
 
 (s/def ::sum-constructor
@@ -57,7 +58,7 @@
 
 (s/def ::signature
   (s/and sequential?
-         (s/cat :class (s/? ::typeclass-sig)
+         (s/cat :class ::typeclass-sig
                 :input ::type-constructor
                 :_ ::->
                 :return (s/or :value ::type-constructor

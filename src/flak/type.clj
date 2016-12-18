@@ -1,5 +1,5 @@
 (ns flak.type
-  (:refer-clojure :exclude [class def list map type])
+  (:refer-clojure :exclude [class def type])
   (:require
    [clojure.spec :as spec]
    [clojure.string :as string]
@@ -10,10 +10,10 @@
 
 (alias 'c 'clojure.core)
 
-(defprotocol Show (show [t]))
-(defprotocol Value (-value [_]))
-(defprotocol Destructurable (-destructure [x]))
-(defprotocol Truthy (truthy? [_]))
+;; (defprotocol Show (show [t]))
+;; (defprotocol Value (-value [_]))
+;; (defprotocol Destructurable (-destructure [x]))
+;; (defprotocol Truthy (truthy? [_]))
 
 (def ^:private -reg (atom {}))
 (def ^:private -literals (atom #{}))
@@ -22,16 +22,11 @@
 (deftype Literal [s])
 (defmethod print-method Literal [t writer]
   (.write writer (name (.-s t))))
-
+(defn literal [s] (Literal. s))
 
 (def NaN (Literal. 'NaN))
 (def -Infinity (Literal. '-Infinity))
 (def Infinity (Literal. 'Infinity))
-
-(def exclude-java-classes
-  '[Character String Integer Boolean])
-
-(doseq [c exclude-java-classes] (ns-unmap *ns* c))
 
 (def word #"-|_|(?=[A-Z]+)")
 
@@ -49,9 +44,11 @@
 
 (defmacro type [name spec]
   `(do
-     (deftype ~name [~'value] Value (-value [~'_] ~'value))
+     ~(when (resolve name)
+        `(ns-unmap ~*ns* '~name))
+     (deftype ~name [~'value] ~'Value (value [~'_] ~'value))
      (defmethod print-method ~name [t# writer#]
-       (.write writer# (format "#<%s: %s>" ~(c/name name) (pr-str (-value t#)))))
+       (.write writer# (format "#<%s: %s>" ~(c/name name) (pr-str (~'value t#)))))
      (defn ~(kebab-case name) [value#]
        (let [spec# ~spec]
          (assert (spec/valid? spec# value#)
@@ -61,14 +58,6 @@
      (spec/fdef ~(kebab-case name)
        :args (spec/cat :value ~spec)
        :ret (partial instance? ~name))))
-
-(type Character char?)
-(type String    string?)
-(type Integer   integer?)
-(type Boolean   boolean?)
-(type List      seq?)
-(type Vector    vector?)
-(type Map       map?)
 
 (defn type-params [type]
   (reduce (fn [init [k v]]
@@ -109,7 +98,7 @@
 (defn def-literal [type-name]
   `(do
      (ns-unmap ~*ns* '~type-name)
-     (def ~type-name (Literal. '~type-name))
+     (def ~type-name (literal '~type-name))
      (defn ~(is-sym? type-name) [value#]
        (= ~type-name value#))))
 
@@ -117,11 +106,11 @@
   `(do
      ;; ~(when (resolve type-name) `(ns-unmap ~*ns* '~type-name))
      (deftype ~type-name ~arglist
-       Destructurable
-       (-destructure [~'_] ~arglist))
+       ~'Destructurable
+       (~'destructure [~'_] ~arglist))
      (defmethod print-method ~type-name [c# writer#]
-       (if (satisfies? Show c#)
-         (.write writer# (show c#))
+       (if (satisfies? ~'Show c#)
+         (.write writer# (~'show c#))
          (throw
           (Exception.
            (str "Type " '~type-name " doesn't implement Show")))))
@@ -177,7 +166,7 @@
      (if (= ::spec/invalid ast#)
        (throw (ex-info (format "Invalid type signature %s" ~(pr-str signature))
                        {:type ::invalid-type-signature
-                         :signature '~signature
+                        :signature '~signature
                         :ast ast#}))
        (register-signature! '~(qualify *ns* name) ast#))))
 
@@ -205,7 +194,7 @@
                     `(extend-protocol ~typeclass
                        ~type
                        (~name [x#]
-                        (let  [~(render-bindings args) (-destructure x#)]
+                        (let  [~(render-bindings args) (~'destructure x#)]
                           ~expr)))))))))
 
 ;; (defmacro guard [x & guards])

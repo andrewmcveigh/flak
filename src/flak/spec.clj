@@ -100,3 +100,28 @@
                 :tsign (s/+ (s/and seq?
                                    (s/cat :name :clojure.core.specs/local-name
                                           :tsig ::class-function-signature))))))
+
+(s/def ::type-constructor
+  (s/or ::type-name ::type-name
+        ::type-var  ::type-parameter
+        ::parameterized-constructor ::parameterized-constructor))
+
+(s/def ::type-variable
+  (s/and simple-symbol? #(re-matches #"^[a-z]$" (name %))))
+
+(s/def ::type
+  (s/+ (s/alt :type ::type-name
+              :tvar ::type-variable
+              :list (s/and seq? (s/or :type ::type
+                                      :func ::function-type)))))
+
+(s/def ::function-type
+  (s/cat :input ::type
+         :-> ::->
+         :return (s/alt :type ::type :func ::function-type)))
+
+(s/def ::type-signature
+  (s/alt :type ::type
+         :func ::function-type))
+
+(s/conform ::type-signature '((a -> b) -> (b -> a)))

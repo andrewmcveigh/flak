@@ -109,11 +109,28 @@
 (s/def ::type-variable
   (s/and simple-symbol? #(re-matches #"^[a-z]$" (name %))))
 
+(s/def ::list-a
+  (s/and seq? (s/cat :a ::type)))
+
+(s/def ::vector-a
+  (s/and vector? (s/cat :a ::type)))
+
+(s/def ::pair-a
+  (s/and vector? (s/cat :a ::type :b ::type)))
+
+(s/def ::n-tuple-a
+  (s/and vector? (s/cat :a ::type :b ::type :ns (s/+ ::type))))
+
 (s/def ::type
   (s/+ (s/alt :type ::type-name
               :tvar ::type-variable
-              :list (s/and seq? (s/or :type ::type
-                                      :func ::function-type)))))
+              :coll (s/or :list ::list-a
+                          :vect ::vector-a
+                          :pair ::pair-a
+                          :tupl ::n-tuple-a)
+              :expr (s/and seq?
+                           #(> (count %) 1)
+                           (s/or :type ::type :func ::function-type)))))
 
 (s/def ::function-type
   (s/cat :input ::type
@@ -124,4 +141,21 @@
   (s/alt :type ::type
          :func ::function-type))
 
-(s/conform ::type-signature '((a -> b) -> (b -> a)))
+(s/def ::function-name
+  (s/and symbol? #(re-matches #"^[^A-Z&%]+$" (name %))))
+
+(s/def ::class
+  (s/and seq?
+         (s/cat :class ::type-name
+                :tvars (s/+ ::type-variable)
+                :tsig (s/+ (s/and seq?
+                                  (s/cat :name ::function-name
+                                         :tsig ::type-signature))))))
+
+;; (s/conform ::type-signature '((a -> b) -> (b -> a)))
+
+(s/conform ::class '(Monad m
+                           (>>=     m a -> (a -> m b) -> m b)
+                           (>>      m a -> m b -> m b)
+                           (return  a -> m a)
+                           (fail    String -> m a)))

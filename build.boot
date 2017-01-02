@@ -7,7 +7,6 @@
 
 (set-env! :dependencies   dependencies
           :source-paths   #{"src"}
-          :resource-paths #{"resources"}
           :exclusions     '[org.clojure/clojure org.clojure/test.check])
 
 (defn cider? []

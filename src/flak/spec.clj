@@ -1,5 +1,11 @@
 (ns flak.spec
+  (:refer-clojure :exclude [not])
   (:require [clojure.spec :as s]))
+
+(alias 'c 'clojure.core)
+
+(defn not [spec]
+  (complement (partial s/valid? spec)))
 
 (s/def ::type-name
   (s/and simple-symbol? #(re-matches #"^[A-Z][A-Za-z]*$" (name %))))
@@ -34,7 +40,7 @@
 
 (s/def ::binding
   (s/or :type    ::type-name
-        :literal (s/and #(not (s/valid? ::destructuring %))
+        :literal (s/and (not ::destructuring)
                         (complement #{:as})
                         (complement symbol?))
         :binding symbol?))
@@ -144,18 +150,33 @@
 (s/def ::function-name
   (s/and symbol? #(re-matches #"^[^A-Z&%]+$" (name %))))
 
+(s/def ::default-class-impl
+  (s/alt :expr any?
+         :lambda (s/cat :binding (s/coll-of ::binding-form :kind vector?)
+                        :expr any?)))
+
 (s/def ::class
   (s/and seq?
          (s/cat :class ::type-name
                 :tvars (s/+ ::type-variable)
-                :tsig (s/+ (s/and seq?
-                                  (s/cat :name ::function-name
-                                         :tsig ::type-signature))))))
+                :fsigs (s/+ (s/and seq?
+                                   (s/cat :name ::function-name
+                                          :body (s/alt :typesig ::function-type
+                                                       :default ::default-class-impl)))))))
 
-;; (s/conform ::type-signature '((a -> b) -> (b -> a)))
-
-(s/conform ::class '(Monad m
-                           (>>=     m a -> (a -> m b) -> m b)
-                           (>>      m a -> m b -> m b)
-                           (return  a -> m a)
-                           (fail    String -> m a)))
+(-> (s/conform
+     ::class
+     '(Monad m
+             (>>=     m a -> (a -> m b) -> m b)
+             (>>      m a -> m b -> m b)
+             (return  a -> m a)
+             (return  [a] a)
+             (fail    String -> m a)))
+    :fsigs
+    first
+    )
+load
+'{Monad {:class Monad
+         :tvars [m]
+         :fsigs {>>= {:args }}
+         }}

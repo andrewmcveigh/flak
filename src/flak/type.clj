@@ -5,19 +5,35 @@
    [clojure.string :as string]
    [clojure.walk :as walk]
    [flak.functor :as f]
-   [flak.monad :as m]
    [flak.spec :as s]))
 
 (alias 'c 'clojure.core)
 
-;; (defprotocol Show (show [t]))
-;; (defprotocol Value (-value [_]))
-;; (defprotocol Destructurable (-destructure [x]))
-;; (defprotocol Truthy (truthy? [_]))
-
-(def ^:private -reg (atom {}))
 (def ^:private -literals (atom #{}))
+(defn register-literal! [type-name ast]
+  (swap! -literals conj type-name)
+  type-name)
+
+(def ^:private -types (atom {}))
+(defn register-type! [type-name ast]
+  (swap! -types assoc type-name ast)
+  type-name)
+
+(def ^:private -classes (atom {}))
+(defn register-class! [class-name ast]
+  (swap! -classes assoc class-name ast)
+  class-name)
+
+(def ^:private -instances (atom {}))
+(defn register-instance! [class-name type-name function-sigs]
+  (swap! -instances assoc [class-name type-name] function-sigs)
+  [class-name type-name])
+
 (def ^:private -signatures (atom {}))
+(defn register-signature! [name ast]
+  (swap! -signatures assoc name ast)
+  name)
+
 
 (deftype Literal [s])
 (defmethod print-method Literal [t writer]
@@ -125,8 +141,6 @@
 (defn normalize-arglist [args]
   (mapv #(if (spec/valid? ::s/type-name %) (gensym) %) args))
 
-(defn register-type! [type-name ast]
-  (swap! -reg assoc type-name ast))
 
 (defmacro data [& declaration]
   (let [{:keys [type data]} (spec/conform ::s/data-type declaration)
@@ -149,10 +163,6 @@
                  (def-literal type-name)))))
        '~type-name)))
 
-(defn register-signature! [name ast]
-  (swap! -signatures assoc name ast)
-  name)
-
 (defn- ->sym [v]
   (symbol (str (.name (.ns v))) (str (.sym v))))
 
@@ -170,20 +180,34 @@
                         :how (spec/explain-data ::s/signature '~signature)}))
        (register-signature! '~(qualify *ns* name) ast#))))
 
+(defn assert-valid-class-signature [class-decl decl]
+  (when (= ::spec/invalid class-decl)
+    (throw (ex-info (format "Invalid class signature %s" (pr-str decl))
+                    {:type ::invalid-type-signature
+                     :signature decl
+                     :how (spec/explain-data ::s/class-decl class-decl)}))))
+
 (defmacro class [& decl]
-  (let [class-decl (spec/conform ::s/class-decl decl)
-        _ (when (= ::spec/invalid class-decl)
-            (throw (ex-info (format "Invalid class signature %s"
-                                    (pr-str decl))
-                            {:type ::invalid-type-signature
-                             :signature decl
-                             :how (spec/explain-data ::s/class-decl
-                                                     class-decl)})))
-        {:keys [class tvars tsign]} class-decl
-        tsig (spec/unform ::s/class-function-signature (:tsig tsign))]
+  (let [class-decl (spec/conform ::s/class decl)
+        _ (assert-valid-class-signature! class-decl decl)
+        {:keys [class tvars fsigs] :as ast} class-decl]
+    (register-class! class ast)
     `(do
-       (t/def ~(:name tsign) ~class ~@tvars ~'=> ~@tsig)
-       (defprotocol ~class (~(:name tsign) ~tvars)))))
+       ~@(for [{:keys [name tsig]} fsigs]
+           `(defmulti ~name (fn [~'T & ~'_] ~'T))))))
+
+(class Monad m
+  (>>=     m a -> (a -> m b) -> m b)
+  (>>      m a -> m b -> m b)
+  (return  a -> m a)
+  (return  pure)
+  (fail    String -> m a))
+
+(t/register-class! 'Monad m sig)
+(defmulti >>=    (fn [T t t1] T))
+(defmulti >>     (fn [T t t1] T))
+(defmulti return (fn [T t] T))
+(defmulti fail   (fn [T t] T))
 
 (defn render-bindings [bindings]
   (mapv (comp (fn [[t x]]

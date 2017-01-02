@@ -1,21 +1,41 @@
 (ns flak.monad
   (:refer-clojure :exclude [get let])
-  (:require [flak.type :as t]))
+  (:require [flak.type :as t]
+            [flak.pattern :as p]))
 
 (alias 'c 'clojure.core)
 
 (t/class Monad m
   (>>=     m a -> (a -> m b) -> m b)
   (>>      m a -> m b -> m b)
-  ;; (return  a -> m a)
+  (return  a -> m a)
   (fail    String -> m a))
 
-(clojure.spec/explain-data :flak.spec/class-decl
-                           '(Monad m
-                              (>>=     m a -> (a -> m b) -> m b)
-                              (>>      m a -> m b -> m b)
-                              (return  a -> m a)
-                              (fail    String -> m a)))
+(t/register-class! 'Monad m sig)
+(defmulti >>=    (fn [T t t1] T))
+(defmulti >>     (fn [T t t1] T))
+(defmulti return (fn [T t] T))
+(defmulti fail   (fn [T t] T))
+
+(t/data (State s a) (State (s -> [a s])))
+
+(a) :: List a
+[a] :: Vector a
+[a b] :: (a, b)
+[a b c] :: (a, b, c)
+
+(t/instance Monad (State s)
+  (>>= [[State h] f]
+    (State. (fn [s] (p/let [[a s'] (h s) [State g] (f a)] (g s')))))
+  (return [a]
+    (State. (fn [s] [a s]))))
+
+(t/register-instance! 'Monad 'State)
+(defmethod >>= State [_ a f]
+  (
+    )
+  (return [a]))
+
 
 (deftype State [f]
   Monad

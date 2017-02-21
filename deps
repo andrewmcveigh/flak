@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+DEPS="
+/home/andrewmcveigh/.m2/repository/org/apache/httpcomponents/httpcore/4.1.2/httpcore-4.1.2.jar
+/home/andrewmcveigh/.m2/repository/org/apache/httpcomponents/httpclient/4.1.2/httpclient-4.1.2.jar
+/home/andrewmcveigh/.m2/repository/org/sonatype/aether/aether-spi/1.13.1/aether-spi-1.13.1.jar
+/home/andrewmcveigh/.m2/repository/org/apache/maven/wagon/wagon-http/2.2/wagon-http-2.2.jar
+/home/andrewmcveigh/.m2/repository/org/sonatype/aether/aether-api/1.13.1/aether-api-1.13.1.jar
+/home/andrewmcveigh/.m2/repository/org/apache/maven/wagon/wagon-http-shared4/2.2/wagon-http-shared4-2.2.jar
+/home/andrewmcveigh/.m2/repository/org/codehaus/plexus/plexus-interpolation/1.14/plexus-interpolation-1.14.jar
+/home/andrewmcveigh/.m2/repository/org/sonatype/aether/aether-util/1.13.1/aether-util-1.13.1.jar
+/home/andrewmcveigh/.m2/repository/org/apache/maven/maven-aether-provider/3.0.4/maven-aether-provider-3.0.4.jar
+/home/andrewmcveigh/.m2/repository/org/codehaus/plexus/plexus-utils/2.0.6/plexus-utils-2.0.6.jar
+/home/andrewmcveigh/.m2/repository/org/sonatype/aether/aether-connector-wagon/1.13.1/aether-connector-wagon-1.13.1.jar
+/home/andrewmcveigh/.m2/repository/org/clojure/clojure/1.9.0-alpha14/clojure-1.9.0-alpha14.jar
+/home/andrewmcveigh/.m2/repository/com/cemerick/pomegranate/0.3.1/pomegranate-0.3.1.jar
+/home/andrewmcveigh/.m2/repository/org/tcrawley/dynapath/0.2.5/dynapath-0.2.5.jar
+/home/andrewmcveigh/.m2/repository/org/apache/maven/wagon/wagon-provider-api/2.2/wagon-provider-api-2.2.jar
+/home/andrewmcveigh/.m2/repository/commons-logging/commons-logging/1.1.1/commons-logging-1.1.1.jar
+/home/andrewmcveigh/.m2/repository/org/apache/maven/maven-model-builder/3.0.4/maven-model-builder-3.0.4.jar
+/home/andrewmcveigh/.m2/repository/org/sonatype/aether/aether-impl/1.13.1/aether-impl-1.13.1.jar
+/home/andrewmcveigh/.m2/repository/org/sonatype/aether/aether-connector-file/1.13.1/aether-connector-file-1.13.1.jar
+/home/andrewmcveigh/.m2/repository/org/apache/maven/maven-model/3.0.4/maven-model-3.0.4.jar
+"
+
+rlwrap java -cp `echo $DEPS | tr ' ' ':'` clojure.main dev/deps.clj

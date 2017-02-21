@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+
+source .dependencies
+
+rlwrap java \
+       -Dclojure.server.repl="{:port 7888 :accept clojure.core.server/repl}" \
+       -cp $REPL_DEPENDENCIES \
+       clojure.main dev/user.clj

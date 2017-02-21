@@ -164,19 +164,19 @@
                                           :body (s/alt :typesig ::function-type
                                                        :default ::default-class-impl)))))))
 
-(-> (s/conform
-     ::class
-     '(Monad m
-             (>>=     m a -> (a -> m b) -> m b)
-             (>>      m a -> m b -> m b)
-             (return  a -> m a)
-             (return  [a] a)
-             (fail    String -> m a)))
-    :fsigs
-    first
-    )
-load
-'{Monad {:class Monad
-         :tvars [m]
-         :fsigs {>>= {:args }}
-         }}
+;; (-> (s/conform
+;;      ::class
+;;      '(Monad m
+;;              (>>=     m a -> (a -> m b) -> m b)
+;;              (>>      m a -> m b -> m b)
+;;              (return  a -> m a)
+;;              (return  [a] a)
+;;              (fail    String -> m a)))
+;;     :fsigs
+;;     first
+;;     )
+;; load
+;; '{Monad {:class Monad
+;;          :tvars [m]
+;;          :fsigs {>>= {:args }}
+;;          }}

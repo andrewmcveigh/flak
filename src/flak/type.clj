@@ -180,7 +180,7 @@
                         :how (spec/explain-data ::s/signature '~signature)}))
        (register-signature! '~(qualify *ns* name) ast#))))
 
-(defn assert-valid-class-signature [class-decl decl]
+(defn assert-valid-class-signature! [class-decl decl]
   (when (= ::spec/invalid class-decl)
     (throw (ex-info (format "Invalid class signature %s" (pr-str decl))
                     {:type ::invalid-type-signature
@@ -191,23 +191,23 @@
   (let [class-decl (spec/conform ::s/class decl)
         _ (assert-valid-class-signature! class-decl decl)
         {:keys [class tvars fsigs] :as ast} class-decl]
-    (register-class! class ast)
     `(do
+       (register-class! '~class '~ast)
        ~@(for [{:keys [name tsig]} fsigs]
            `(defmulti ~name (fn [~'T & ~'_] ~'T))))))
 
-(class Monad m
-  (>>=     m a -> (a -> m b) -> m b)
-  (>>      m a -> m b -> m b)
-  (return  a -> m a)
-  (return  pure)
-  (fail    String -> m a))
+;; (class Monad m
+;;   (>>=     m a -> (a -> m b) -> m b)
+;;   (>>      m a -> m b -> m b)
+;;   (return  a -> m a)
+;;   (return  pure)
+;;   (fail    String -> m a))
 
-(t/register-class! 'Monad m sig)
-(defmulti >>=    (fn [T t t1] T))
-(defmulti >>     (fn [T t t1] T))
-(defmulti return (fn [T t] T))
-(defmulti fail   (fn [T t] T))
+;; (t/register-class! 'Monad m sig)
+;; (defmulti >>=    (fn [T t t1] T))
+;; (defmulti >>     (fn [T t t1] T))
+;; (defmulti return (fn [T t] T))
+;; (defmulti fail   (fn [T t] T))
 
 (defn render-bindings [bindings]
   (mapv (comp (fn [[t x]]
@@ -215,8 +215,18 @@
               second)
         bindings))
 
+(defn assert-valid-instance-signature! [decl cdecl]
+  (when (= ::spec/invalid cdecl)
+    (throw (ex-info (format "Invalid instance declaration %s" (pr-str decl))
+                    {:type ::invalid-type-signature
+                     :signature decl
+                     :how (spec/explain-data ::s/instance-impl decl)}))))
+
 (defmacro instance [typeclass type & impls]
-  (let [[t impls'] (spec/conform ::s/instance-impl impls)]
+  (let [cdecl (spec/conform ::s/instance-impl impls)
+        _ (assert-valid-instance-signature!
+           `(instance '~typeclass '~type '~@impls) cdecl)
+        [t impls'] cdecl]
     `(do
        ~@(case t
            :gen (for [{:keys [name args expr]} impls']

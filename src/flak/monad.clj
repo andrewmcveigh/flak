@@ -11,18 +11,14 @@
   (return  a -> m a)
   (fail    String -> m a))
 
-(t/register-class! 'Monad m sig)
-(defmulti >>=    (fn [T t t1] T))
-(defmulti >>     (fn [T t t1] T))
-(defmulti return (fn [T t] T))
-(defmulti fail   (fn [T t] T))
+(t/newtype (State s a) (State { run-state (s -> [a s]) }))
 
-(t/data (State s a) (State (s -> [a s])))
+;; (ttt)
 
-(a) :: List a
-[a] :: Vector a
-[a b] :: (a, b)
-[a b c] :: (a, b, c)
+;; (a) :: List a
+;; [a] :: Vector a
+;; [a b] :: (a, b)
+;; [a b c] :: (a, b, c)
 
 (t/instance Monad (State s)
   (>>= [[State h] f]
@@ -30,11 +26,11 @@
   (return [a]
     (State. (fn [s] [a s]))))
 
-(t/register-instance! 'Monad 'State)
-(defmethod >>= State [_ a f]
-  (
-    )
-  (return [a]))
+;; (t/register-instance! 'Monad 'State)
+;; (defmethod >>= State [_ a f]
+;;   (
+;;     )
+;;   (return [a]))
 
 
 (deftype State [f]
